@@ -1,0 +1,44 @@
+services:
+  absensigeo:
+    build: ./php
+    image: absensigeo_php:latest
+    container_name: absensigeo
+    hostname: "absensigeo"
+    volumes:
+      - ./src:/var/www/html
+      - ./php/www.conf:/usr/local/etc/php-fpm.d/www.conf
+    working_dir: /var/www/html
+    depends_on:
+      - absensigeo_db
+
+  absensigeo_db:
+    image: postgis/postgis:16-3.4
+    container_name: absensigeo_db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: rassyz
+      POSTGRES_PASSWORD: p455w0rd
+      POSTGRES_DB: absensigeo
+      TZ: Asia/Jakarta
+      SERVICE_TAGS: dev
+      SERVICE_NAME: absensigeo_db
+
+  absensigeo_nginx:
+    build: ./nginx
+    image: absensigeo_nginx:latest
+    container_name: absensigeo_nginx
+    hostname: "absensigeo_nginx"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./src:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - absensigeo
