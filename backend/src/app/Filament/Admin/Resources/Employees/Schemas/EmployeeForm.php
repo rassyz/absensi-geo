@@ -22,7 +22,6 @@ class EmployeeForm
                 Select::make('department_id')
                     ->label('Departemen')
                     ->relationship('department', 'name')
-                    ->searchable()
                     ->required(),
                 TextInput::make('full_name')
                     ->label('Nama Lengkap')

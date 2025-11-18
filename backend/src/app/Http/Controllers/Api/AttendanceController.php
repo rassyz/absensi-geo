@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\Attendance;
 use App\Models\AttendanceZone;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -35,36 +36,34 @@ class AttendanceController extends Controller
             );
 
             if ($isValidLocation) {
-                // 3. LOKASI VALID
-                // --- DI SINI LOGIKA ANDA UNTUK MENYIMPAN RECORD ABSEN MASUK ---
-                // Contoh:
-                // Attendance::create([
-                //     'employee_id' => $request->user()->employee->id,
-                //     'check_in_time' => now(),
-                //     'check_in_lat' => $request->latitude,
-                //     'check_in_lng' => $request->longitude,
-                // ]);
-                // -----------------------------------------------------------
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Check-in berhasil. Anda berada di dalam area absensi.',
-                    'is_in_zone' => true,
+                // LOKASI VALID
+                // Simpan record absensi check-in
+                $attendance = Attendance::create([
+                    'employee_id' => $request->user()->employee->id,
+                    'attendance_zone_id' => $this->getZoneId($request->user()),
+                    'check_in' => now(),
+                    'check_in_latitude' => $request->latitude,
+                    'check_in_longitude' => $request->longitude,
+                    'check_out' => null,
+                    'check_out_latitude' => null,
+                    'check_out_longitude' => null,
+                    'status' => 'hadir', // Status default saat check-in
                 ]);
 
-            } else {
-                // 4. LOKASI TIDAK VALID
                 return response()->json([
-                    'status' => 'failed',
+                    'message' => 'Check-in berhasil. Anda berada di dalam area absensi.',
+                    'data' => $attendance,
+                ]);
+            } else {
+                // LOKASI TIDAK VALID
+                return response()->json([
                     'message' => 'Anda berada di luar area absensi.',
                     'is_in_zone' => false,
-                ], 422); // 422 Unprocessable Entity
+                ], 422);
             }
-
         } catch (\Exception $e) {
-            // 5. Tangani error (misal: user tidak punya departemen, departemen tidak punya zona)
-             return response()->json([
-                'status' => 'failed',
+            // 5. Tangani error
+            return response()->json([
                 'message' => $e->getMessage()
             ], 404);
         }
@@ -76,7 +75,7 @@ class AttendanceController extends Controller
     public function checkOut(Request $request)
     {
         // 1. Validasi input (hanya lat/lng)
-         $validator = Validator::make($request->all(), [
+        $validator = Validator::make($request->all(), [
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
         ]);
@@ -95,42 +94,37 @@ class AttendanceController extends Controller
 
             if ($isValidLocation) {
                 // 3. LOKASI VALID
-                // --- DI SINI LOGIKA ANDA UNTUK MENYIMPAN RECORD ABSEN KELUAR ---
-                // Contoh:
-                // $attendance = Attendance::where('employee_id', $request->user()->employee->id)
-                //                         ->whereDate('check_in_time', today())
-                //                         ->firstOrFail();
-                // $attendance->update([
-                //     'check_out_time' => now(),
-                //     'check_out_lat' => $request->latitude,
-                //     'check_out_lng' => $request->longitude,
-                // ]);
-                // -------------------------------------------------------------
+                // Ambil absensi hari ini
+                $attendance = Attendance::where('employee_id', $request->user()->employee->id)
+                    ->whereDate('check_in', today())
+                    ->firstOrFail();
 
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Check-out berhasil. Anda berada di dalam area absensi.',
-                    'is_in_zone' => true,
+                // Update record absensi check-out
+                $attendance->update([
+                    'check_out' => now(),
+                    'check_out_latitude' => $request->latitude,
+                    'check_out_longitude' => $request->longitude,
+                    'status' => 'hadir', // Atur status absensi setelah keluar
                 ]);
 
+                return response()->json([
+                    'message' => 'Check-out berhasil. Anda berada di dalam area absensi.',
+                    'data' => $attendance,
+                ]);
             } else {
                 // 4. LOKASI TIDAK VALID
                 return response()->json([
-                    'status' => 'failed',
                     'message' => 'Anda berada di luar area absensi.',
                     'is_in_zone' => false,
-                ], 422); // 422 Unprocessable Entity
+                ], 422);
             }
-
         } catch (\Exception $e) {
             // 5. Tangani error
-             return response()->json([
-                'status' => 'failed',
+            return response()->json([
                 'message' => $e->getMessage()
             ], 404);
         }
     }
-
 
     /**
      * Metode private untuk memvalidasi lokasi user.
@@ -155,7 +149,7 @@ class AttendanceController extends Controller
         }
 
         if (!$employee->department) {
-             throw new \Exception('Karyawan tidak terdaftar di departemen manapun.');
+            throw new \Exception('Karyawan tidak terdaftar di departemen manapun.');
         }
 
         // 3. Ambil ID zona yang valid
@@ -166,13 +160,21 @@ class AttendanceController extends Controller
         }
 
         // 4. Buat Titik (POINT) PostGIS dari lokasi user
-        // Penting: PostGIS menggunakan (Longitude, Latitude)
-        $userLocation = DB::raw("ST_SetSRID(ST_MakePoint($longitude, $latitude), 4326)");
-
-        // 5. Kueri Spasial Inti
-        // Cek: Apakah lokasi user 'ST_Contains' (terkandung) di *salah satu* zona?
         return AttendanceZone::whereIn('id', $validZoneIds)
-            ->whereRaw('ST_Contains(area, ?)', [$userLocation])
+            ->whereRaw('ST_Contains(area, ST_SetSRID(ST_MakePoint(?, ?), 4326))', [$longitude, $latitude])
             ->exists();
+    }
+
+    /**
+     * Metode private untuk mendapatkan ID zona absensi berdasarkan user.
+     *
+     * @param \App\Models\User $user
+     * @return int|null
+     */
+    private function getZoneId(User $user): ?int
+    {
+        $employee = $user->employee;
+        // Ambil ID zona pertama yang valid
+        return $employee->department->attendanceZones->first()->id ?? null;
     }
 }

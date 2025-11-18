@@ -19,7 +19,6 @@ class DepartmentForm
                     ->label('Zona Absensi')
                     ->multiple()
                     ->relationship('attendanceZones', 'name')
-                    ->searchable()
                     ->preload()
                     ->required(),
             ]);
