@@ -27,6 +27,7 @@
         "laravel/tinker": "^2.10.1",
         "livewire/livewire": "^3.6",
         "marcelweidum/filament-expiration-notice": "^1.0",
+        "pxlrbt/filament-excel": "^3.2",
         "rupadana/filament-api-service": "^4.0",
         "unknow-sk/filament-logger": "^1.0"
     },

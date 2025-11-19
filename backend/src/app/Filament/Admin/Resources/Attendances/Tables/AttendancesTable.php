@@ -13,7 +13,10 @@ use Filament\Actions\ViewAction;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\DatePicker;
-
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\AttendanceExport;
+use Filament\Actions\Action;
+use App\Models\Attendance;
 
 class AttendancesTable
 {
@@ -56,16 +59,18 @@ class AttendancesTable
             ])
             ->filters([
                 Filter::make('date')
-                    ->label('Filter by Date')
+                    ->label('Filter berdasarkan Tanggal')
                     ->form([
-                        DatePicker::make('selected_date')
-                            ->label('Pilih Tanggal')
+                        DatePicker::make('start_date')
+                            ->label('Tanggal Mulai')
+                            ->required(),
+                        DatePicker::make('end_date')
+                            ->label('Tanggal Akhir')
                             ->required(),
                     ])
                     ->query(function (Builder $query, array $data) {
-                        if (!empty($data['selected_date'])) {
-                            $query->whereDate('check_in', $data['selected_date'])
-                                ->orWhereDate('check_out', $data['selected_date']);
+                        if (!empty($data['start_date']) && !empty($data['end_date'])) {
+                            $query->whereBetween('check_in', [$data['start_date'], $data['end_date']]);
                         }
                     }),
             ])
@@ -75,6 +80,28 @@ class AttendancesTable
                 ViewAction::make(),
             ])
             ->toolbarActions([
+                Action::make('export')
+                    ->label('Ekspor Data Dashboard')
+                    ->action(function ($action) {
+                        // Ambil Livewire yang sedang menjalankan tabel
+                        $livewire = $action->getLivewire();
+
+                        // Ambil query yang sudah terfilter FILAMENT
+                        $filteredQuery = $livewire->getFilteredTableQuery();
+
+                        // Ambil data final
+                        $dataToExport = $filteredQuery->get();
+
+                        if ($dataToExport->isEmpty()) {
+                            session()->flash('message', 'Tidak ada data untuk diekspor.');
+                            return;
+                        }
+
+                        return Excel::download(
+                            new AttendanceExport($dataToExport),
+                            'attendance_dashboard_export_' . now()->format('Y_m_d_His') . '.xlsx'
+                        );
+                    }),
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),

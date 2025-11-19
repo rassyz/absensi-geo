@@ -40,5 +40,6 @@ final class AppServiceProvider extends ServiceProvider
                 ->danger()
                 ->send();
         };
+
     }
 }
