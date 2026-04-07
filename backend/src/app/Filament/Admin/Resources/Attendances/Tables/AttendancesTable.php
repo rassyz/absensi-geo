@@ -2,7 +2,6 @@
 
 namespace App\Filament\Admin\Resources\Attendances\Tables;
 
-use Dom\Text;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -16,7 +15,6 @@ use Filament\Forms\Components\DatePicker;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\AttendanceExport;
 use Filament\Actions\Action;
-use App\Models\Attendance;
 
 class AttendancesTable
 {
@@ -81,7 +79,7 @@ class AttendancesTable
             ])
             ->toolbarActions([
                 Action::make('export')
-                    ->label('Ekspor Data Dashboard')
+                    ->label('Ekspor Data Excel')
                     ->action(function ($action) {
                         // Ambil Livewire yang sedang menjalankan tabel
                         $livewire = $action->getLivewire();

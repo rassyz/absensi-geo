@@ -15,12 +15,19 @@ class DepartmentForm
                 TextInput::make('name')
                     ->label('Nama Departemen')
                     ->required(),
-                Select::make('attendance_zones')
+                Select::make('attendanceZones')
+                    ->options(\App\Models\AttendanceZone::pluck('name', 'id'))
                     ->label('Zona Absensi')
                     ->multiple()
                     ->relationship('attendanceZones', 'name')
                     ->preload()
                     ->required(),
+                    // ->options([
+                    //     'HR' => 'HR',
+                    //     'IT' => 'IT',
+                    //     'Finance' => 'Finance',
+                    //     'Marketing' => 'Marketing',
+                    // ])
             ]);
     }
 }
