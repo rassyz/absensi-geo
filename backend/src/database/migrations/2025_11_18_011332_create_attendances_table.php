@@ -22,6 +22,8 @@ return new class extends Migration
             $table->decimal('check_in_longitude', 11, 8)->nullable();
             $table->decimal('check_out_latitude', 10, 8)->nullable();
             $table->decimal('check_out_longitude', 11, 8)->nullable();
+            $table->string('check_in_photo_path')->nullable();
+            $table->string('check_out_photo_path')->nullable();
             $table->string('status', 20)->nullable();
 
             $table->timestamps();

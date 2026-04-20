@@ -2,19 +2,20 @@
 
 namespace App\Filament\Admin\Resources\Attendances\Tables;
 
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Table;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\ViewAction;
-use Illuminate\Database\Eloquent\Builder;
-use Filament\Tables\Filters\Filter;
-use Filament\Forms\Components\DatePicker;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\AttendanceExport;
 use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
+use Filament\Tables\Columns\ImageColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Maatwebsite\Excel\Facades\Excel;
 
 class AttendancesTable
 {
@@ -39,6 +40,15 @@ class AttendancesTable
                     ->dateTime('d M Y - H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
+                ImageColumn::make('check_in_photo_path')
+                    ->label('Foto Masuk')
+                    ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
+                    ->circular() // Opsional: membuat foto jadi bulat agar tabel terlihat lebih rapi
+                    ->stacked(), // Opsional: Jika kamu ingin menumpuk foto dengan teks lain
+                ImageColumn::make('check_out_photo_path')
+                    ->label('Foto Keluar')
+                    ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
+                    ->circular(),
                 TextColumn::make('status')
                     ->label('Status')
                     ->sortable(),

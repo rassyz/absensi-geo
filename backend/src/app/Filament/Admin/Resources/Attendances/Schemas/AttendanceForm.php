@@ -2,8 +2,9 @@
 
 namespace App\Filament\Admin\Resources\Attendances\Schemas;
 
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
 use Filament\Schemas\Schema;
 
 class AttendanceForm
@@ -36,7 +37,22 @@ class AttendanceForm
                         'sakit' => 'Sakit',
                         'cuti' => 'Cuti',
                     ])
+                    ->columnSpanFull()
                     ->required(),
+                FileUpload::make('check_in_photo_path')
+                    ->label('Foto Check-In')
+                    ->image() // Menandakan ini file gambar agar muncul preview
+                    ->disk('public') // Wajib: sesuaikan dengan disk di controller
+                    ->directory('attendances') // Arahkan ke folder attendances
+                    ->openable(), // Agar foto bisa diklik dan terbuka di tab baru
+                    // ->disabled(), // Beri disabled() agar Admin tidak bisa mengubah foto absen secara manual (opsional, tapi disarankan untuk integritas data)
+                FileUpload::make('check_out_photo_path')
+                    ->label('Foto Check-Out')
+                    ->image()
+                    ->disk('public')
+                    ->directory('attendances')
+                    ->openable(),
+                    // ->disabled(),
             ]);
     }
 }
