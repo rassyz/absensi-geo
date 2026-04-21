@@ -1,0 +1,726 @@
+// lib/screens/attendance_screen.dart
+
+import 'package:absensi_geo/providers/auth_provider.dart';
+import 'package:absensi_geo/services/api_service.dart';
+import 'package:absensi_geo/theme/app_colors.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:io';
+
+class AttendanceScreen extends StatefulWidget {
+  const AttendanceScreen({super.key});
+
+  @override
+  State<AttendanceScreen> createState() => _AttendanceScreenState();
+}
+
+class _AttendanceScreenState extends State<AttendanceScreen> {
+  final ApiService apiService = ApiService();
+  final ImagePicker _picker = ImagePicker();
+  File? _capturedImage;
+
+  final MapController _mapController = MapController();
+
+  // --- Dynamic Map State Variables ---
+  List<LatLng> _polygonPoints = [];
+  LatLng? _officeLocation;
+  LatLng? _userLocation;
+  bool _isLoadingMap = true;
+  // String _departmentName = "Loading...";
+
+  // --- Real-Time Attendance State ---
+  bool _hasCheckedIn = false;
+  bool _hasCheckedOut = false;
+  String _checkInTime = '-- : -- : --';
+  String _checkOutTime = '-- : -- : --';
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAttendanceData();
+    // TODO: Ideally, you should also fetch today's attendance status from
+    // the API here to set _hasCheckedIn and _checkInTime if they already
+    // clocked in earlier today.
+  }
+
+  Future<void> _initializeAttendanceData() async {
+    // 1. Check Today's API Status FIRST (so the UI updates immediately)
+    await _fetchTodayStatus();
+
+    // 2. Fetch GPS
+    try {
+      await _getUserLocation();
+    } catch (e) {
+      debugPrint("GPS Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: AppColors.tertiary[500],
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+
+    // 3. Fetch Database Polygon
+    try {
+      await _fetchAttendanceZone();
+    } catch (e) {
+      debugPrint("API Zone Error: $e");
+    }
+
+    if (mounted) {
+      setState(() {
+        _officeLocation ??= const LatLng(-6.200000, 106.816666);
+        _isLoadingMap = false;
+      });
+    }
+  }
+
+  // --- Get Today's Status ---
+  Future<void> _fetchTodayStatus() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.user?.token;
+
+    if (token != null) {
+      final statusData = await apiService.getTodayAttendanceStatus(token);
+
+      if (statusData != null && statusData['success'] == true && mounted) {
+        setState(() {
+          _hasCheckedIn = statusData['has_checked_in'] ?? false;
+          _hasCheckedOut = statusData['has_checked_out'] ?? false;
+
+          if (_hasCheckedIn) {
+            _checkInTime = statusData['check_in_time'] ?? '-- : -- : --';
+          }
+          if (_hasCheckedOut) {
+            _checkOutTime = statusData['check_out_time'] ?? '-- : -- : --';
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _getUserLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) throw Exception('Location services are disabled.');
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        throw Exception('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception('Location permissions are permanently denied.');
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    if (mounted) {
+      setState(() {
+        _userLocation = LatLng(position.latitude, position.longitude);
+      });
+    }
+  }
+
+  Future<void> _fetchAttendanceZone() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.user?.token;
+
+    if (token != null) {
+      final zoneData = await apiService.getUserAttendanceZone(token);
+
+      if (zoneData != null && mounted) {
+        setState(() {
+          _polygonPoints = _parseWktPolygon(zoneData['area']);
+          _officeLocation = _getPolygonCenter(_polygonPoints);
+        });
+      }
+    }
+  }
+
+  // Unified method to handle the camera and submission based on current state
+  Future<void> _processAttendance(String token) async {
+    if (_userLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Waiting for GPS location..."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Determine action based on state
+    bool isCheckIn = !_hasCheckedIn;
+
+    final XFile? photo = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+      imageQuality: 50,
+    );
+
+    if (photo != null) {
+      if (!mounted) return;
+      setState(() {
+        _capturedImage = File(photo.path);
+      });
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final result = await apiService.submitAttendance(
+        token: token,
+        photo: _capturedImage!,
+        latitude: _userLocation!.latitude,
+        longitude: _userLocation!.longitude,
+        isCheckIn: isCheckIn,
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      // If successful, update the UI timeline and buttons
+      if (result['success'] == true) {
+        setState(() {
+          String currentTime = DateFormat(
+            'HH : mm : ss',
+          ).format(DateTime.now());
+          if (isCheckIn) {
+            _hasCheckedIn = true;
+            _checkInTime = currentTime;
+          } else {
+            _hasCheckedOut = true;
+            _checkOutTime = currentTime;
+          }
+        });
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? "Status unknown"),
+          backgroundColor: result['success'] == true
+              ? AppColors.secondary[500]
+              : AppColors.tertiary[500],
+        ),
+      );
+    }
+  }
+
+  Future<void> _recenterOnUser() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Updating GPS location..."),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      await _getUserLocation();
+
+      if (_userLocation != null) {
+        _mapController.move(_userLocation!, 17.0);
+      }
+    } catch (e) {
+      debugPrint("Recenter Error: $e");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final user = authProvider.user;
+
+    final employee = user?.employee;
+    String displayPosition = "Employee";
+
+    if (employee != null) {
+      if (employee.position != null && employee.departmentName != null) {
+        displayPosition = "${employee.departmentName} - ${employee.position}";
+      } else {
+        displayPosition = employee.position ?? "Employee";
+      }
+    }
+
+    // Determine Main Button text and state
+    String mainButtonText = "Check In";
+    if (_hasCheckedIn && !_hasCheckedOut) {
+      mainButtonText = "Check Out";
+    } else if (_hasCheckedOut) {
+      mainButtonText = "Attendance Complete";
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.light[500],
+      appBar: AppBar(
+        backgroundColor: AppColors.white[500],
+        elevation: 0,
+        leading: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.gray[10],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.arrow_back_ios_new,
+              size: 16,
+              color: AppColors.dark[500],
+            ),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          'Clock In',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: AppColors.dark[500],
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.gray[10],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.my_location,
+                size: 18,
+                color: AppColors.dark[500],
+              ),
+            ),
+            onPressed: _recenterOnUser,
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Stack(
+        children: [
+          _buildMap(),
+          Positioned(top: 16, left: 16, right: 16, child: _buildDateSelector()),
+
+          // Camera Floating Action Button is completely removed from here.
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: _buildBottomCard(
+              user?.employee?.fullName ?? user?.name ?? 'Guest',
+              displayPosition,
+              user?.token ?? '',
+              mainButtonText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMap() {
+    if (_isLoadingMap || _officeLocation == null) {
+      return Container(
+        color: AppColors.light[500],
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.primary[500]),
+        ),
+      );
+    }
+
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(initialCenter: _officeLocation!, initialZoom: 17.0),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.yourcompany.absensigeo',
+        ),
+        if (_polygonPoints.isNotEmpty)
+          PolygonLayer(
+            polygons: [
+              Polygon(
+                points: _polygonPoints,
+                color: AppColors.primary[500]!.withValues(alpha: 0.15),
+                borderColor: AppColors.primary[500]!,
+                borderStrokeWidth: 2.0,
+              ),
+            ],
+          ),
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: _officeLocation!,
+              width: 40,
+              height: 40,
+              child: Icon(
+                Icons.business,
+                color: AppColors.primary[700],
+                size: 30,
+              ),
+            ),
+            if (_userLocation != null)
+              Marker(
+                point: _userLocation!,
+                width: 20,
+                height: 20,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.primary[500],
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.white[500]!, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.dark[500]!.withValues(alpha: 0.3),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateSelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.white[500],
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.dark05,
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.calendar_month_outlined, color: AppColors.primary[500]),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              DateFormat('d MMMM yyyy').format(DateTime.now()),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppColors.dark[500],
+              ),
+            ),
+          ),
+          Icon(Icons.arrow_drop_down, color: AppColors.dark[500]),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomCard(
+    String userName,
+    String position,
+    String token,
+    String mainButtonText,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.white[500],
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primary[500]!,
+                    width: 1.5,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.gray[500],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppColors.dark[500],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      position,
+                      style: TextStyle(
+                        color: AppColors.gray[500],
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Status Badge based on state
+              if (_hasCheckedIn)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary[500],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Active',
+                    style: TextStyle(
+                      color: AppColors.white[500],
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
+          ),
+
+          // Check In Timeline
+          _buildTimelineItem(
+            time: _checkInTime, // Dynamic time
+            label: 'Clock In',
+            isCompleted: _hasCheckedIn,
+            isLast: false,
+            buttonText: 'Clock In',
+            isButtonActive: !_hasCheckedIn, // Active if NOT checked in
+          ),
+
+          // Check Out Timeline
+          _buildTimelineItem(
+            time: _checkOutTime, // Dynamic time
+            label: 'Clock Out',
+            isCompleted: _hasCheckedOut,
+            isLast: true,
+            buttonText: 'Clock Out',
+            isButtonActive:
+                _hasCheckedIn &&
+                !_hasCheckedOut, // Active only after check-in and before check-out
+          ),
+
+          const SizedBox(height: 24),
+
+          // Dynamic Main Button
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _hasCheckedOut
+                  ? null
+                  : () => _processAttendance(token),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _hasCheckedOut
+                    ? AppColors.gray[500]
+                    : AppColors.primary[500],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                mainButtonText,
+                style: TextStyle(
+                  color: AppColors.white[500],
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineItem({
+    required String time,
+    required String label,
+    required bool isCompleted,
+    required bool isLast,
+    required String buttonText,
+    required bool isButtonActive,
+  }) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isCompleted
+                      ? AppColors.primary[500]
+                      : AppColors.white[500],
+                  border: Border.all(
+                    color: isCompleted
+                        ? AppColors.primary[500]!
+                        : AppColors.gray[500]!,
+                    width: 1.5,
+                  ),
+                ),
+                child: isCompleted
+                    ? Icon(Icons.check, size: 16, color: AppColors.white[500])
+                    : null,
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: CustomPaint(
+                      size: const Size(1, double.infinity),
+                      painter: DottedLinePainter(color: AppColors.gray[500]!),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  time,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: AppColors.dark[500],
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(color: AppColors.gray[500], fontSize: 12),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+          Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: isButtonActive
+                    ? AppColors.primary[500]
+                    : AppColors.gray[10],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                buttonText,
+                style: TextStyle(
+                  color: isButtonActive
+                      ? AppColors.white[500]
+                      : AppColors.gray[500],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<LatLng> _parseWktPolygon(String wkt) {
+    List<LatLng> points = [];
+    try {
+      String coordsString = wkt.replaceAll(RegExp(r'[A-Za-z\(\)]'), '').trim();
+      List<String> pairs = coordsString.split(',');
+      for (String pair in pairs) {
+        List<String> coords = pair.trim().split(RegExp(r'\s+'));
+        if (coords.length == 2) {
+          double lng = double.parse(coords[0]);
+          double lat = double.parse(coords[1]);
+          points.add(LatLng(lat, lng));
+        }
+      }
+    } catch (e) {
+      debugPrint("Error parsing polygon: $e");
+    }
+    return points;
+  }
+
+  LatLng _getPolygonCenter(List<LatLng> points) {
+    if (points.isEmpty) return const LatLng(-6.200000, 106.816666);
+    double latSum = 0;
+    double lngSum = 0;
+    for (var p in points) {
+      latSum += p.latitude;
+      lngSum += p.longitude;
+    }
+    return LatLng(latSum / points.length, lngSum / points.length);
+  }
+}
+
+class DottedLinePainter extends CustomPainter {
+  final Color color;
+  DottedLinePainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    var paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    var dashHeight = 3.0;
+    var dashSpace = 3.0;
+    double startY = 0;
+    while (startY < size.height) {
+      canvas.drawLine(Offset(0, startY), Offset(0, startY + dashHeight), paint);
+      startY += dashHeight + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant DottedLinePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}

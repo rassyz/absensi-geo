@@ -22,7 +22,7 @@ class AuthProvider extends ChangeNotifier {
   UserModel? get user => _user;
   bool get isLoading => _isLoading;
   String get errorMessage => _errorMessage;
-  
+
   bool get obscurePassword => _obscurePassword;
   bool get obscureConfirmPassword => _obscureConfirmPassword;
   bool get agreeToTerms => _agreeToTerms;
@@ -47,21 +47,21 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> login(String email, String password) async {
     _isLoading = true;
     _errorMessage = '';
-    notifyListeners(); 
+    notifyListeners();
 
     try {
       UserModel? result = await apiService.login(email, password);
       if (result != null) {
         _user = result;
-        return true; 
+        return true;
       }
       return false;
     } catch (e) {
       _errorMessage = e.toString();
-      return false; 
+      return false;
     } finally {
       _isLoading = false;
-      notifyListeners(); 
+      notifyListeners();
     }
   }
 
@@ -76,25 +76,29 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await apiService.register(
-        name,
-        email,
-        password,
-        passwordConfirmation,
-      );
-      return true; 
+      await apiService.register(name, email, password, passwordConfirmation);
+      return true;
     } catch (e) {
       _errorMessage = e.toString();
-      return false; 
+      return false;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
+  // logout method
   Future<void> logout() async {
-    await apiService.logout();
-    _user = null; 
+    // 1. Get the token from the current user object before we wipe it
+    final token = _user?.token;
+
+    if (token != null) {
+      // 2. Call the API to delete the token from the database
+      await apiService.logout(token);
+    }
+
+    // 3. Reset the local state
+    _user = null;
     notifyListeners();
   }
 

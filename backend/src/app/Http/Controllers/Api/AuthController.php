@@ -40,7 +40,7 @@ class AuthController extends Controller
         ]);
 
         // cari user berdasarkan email
-        $user = User::where('email', $request->email)->first();
+        $user = User::with('employee.department')->where('email', $request->email)->first();
 
         // periksa password
         if (! $user || ! Hash::check($request->password, $user->password)) {

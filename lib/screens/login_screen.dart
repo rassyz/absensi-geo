@@ -12,9 +12,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(
-    text: "michael.mitc@example.com",
-  );
+  final _emailController = TextEditingController(text: "juned@absen.test");
   final _passwordController = TextEditingController();
 
   @override
@@ -63,34 +61,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = Provider.of<AuthProvider>(context);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.background,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header with status bar simulation
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    '9:41',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                  ),
-                  Row(
-                    children: const [
-                      Icon(Icons.signal_cellular_alt, size: 18),
-                      SizedBox(width: 4),
-                      Icon(Icons.wifi, size: 18),
-                      SizedBox(width: 4),
-                      Icon(Icons.battery_std, size: 18),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-
               // Custom App Logo
               Center(
                 child: Container(
@@ -289,16 +266,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 30),
-              Center(
-                child: Container(
-                  width: 134,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
             ],
           ),
         ),

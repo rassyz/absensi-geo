@@ -43,8 +43,7 @@ class AttendancesTable
                 ImageColumn::make('check_in_photo_path')
                     ->label('Foto Masuk')
                     ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
-                    ->circular() // Opsional: membuat foto jadi bulat agar tabel terlihat lebih rapi
-                    ->stacked(), // Opsional: Jika kamu ingin menumpuk foto dengan teks lain
+                    ->circular(), // Opsional: membuat foto jadi bulat agar tabel terlihat lebih rapi
                 ImageColumn::make('check_out_photo_path')
                     ->label('Foto Keluar')
                     ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
