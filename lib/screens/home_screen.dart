@@ -3,10 +3,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
-import 'package:absensi_geo/services/api_service.dart'; // Added API Service
+import 'package:absensi_geo/services/attendance_service.dart';
+// import 'package:absensi_geo/services/api_service.dart'; // Added API Service
 import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:absensi_geo/screens/attendance_screen.dart';
+import 'package:absensi_geo/screens/attendance_report_screen.dart';
 
 // --- Inline Color/Theme Definitions ---
 class AppColors {
@@ -96,7 +98,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final ApiService apiService = ApiService();
+  final AttendanceService _attendanceService = AttendanceService();
 
   // State variable for attendance history
   List<dynamic> _recentAttendances = [];
@@ -123,13 +125,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (token != null) {
       // 1. Fetch Today's Clock In/Out Status
-      final statusData = await apiService.getTodayAttendanceStatus(token);
+      final statusData = await _attendanceService.getTodayAttendanceStatus(
+        token,
+      );
 
       // 2. Fetch Monthly Stats
-      final statsData = await apiService.getMonthlyStats(token);
+      final statsData = await _attendanceService.getMonthlyStats(token);
 
       // 3. Fetch Attendance History
-      final historyData = await apiService.getAttendanceHistory(token);
+      final historyData = await _attendanceService.getAttendanceHistory(token);
 
       if (mounted) {
         setState(() {
@@ -518,8 +522,21 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildAttendanceDataSection(BuildContext context) {
     return Column(
       children: [
-        _buildHeaderRow('Attendance Data'),
+        // 👇 TAMBAHKAN AKSI NAVIGASI DI SINI 👇
+        _buildHeaderRow(
+          'Attendance Data',
+          onSeeAllTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AttendanceReportScreen(),
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 16),
+
+        // ... (kode list mapping attendanceHistory Anda tetap sama di bawah ini)
 
         // Show a message if the database is empty
         if (_recentAttendances.isEmpty)
@@ -535,6 +552,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // Dynamically loop through the database records
         ..._recentAttendances.map((record) {
+          // 👇 Dapatkan warna berdasarkan status 👇
+          Color statusColor = _getSemanticColor(record['status']);
+
           return Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
             child: _buildAttendanceItem(
@@ -542,6 +562,7 @@ class _HomeScreenState extends State<HomeScreen> {
               record['status'] ?? 'Reguler',
               record['check_in'] ?? '-- : -- : --',
               record['check_out'] ?? '-- : -- : --',
+              statusColor, // 👇 Lempar warnanya ke widget Item
             ),
           );
         }), // .toList() is not required when using the spread operator (...)
@@ -554,6 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
     String status,
     String clockIn,
     String clockOut,
+    Color statusColor,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -573,7 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               width: 6,
               decoration: BoxDecoration(
-                color: AppColors.primarySwatch[500],
+                color: statusColor, // <--- UBAH MENJADI statusColor
                 borderRadius: const BorderRadius.horizontal(
                   left: Radius.circular(16),
                 ),
@@ -592,21 +614,34 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.primarySwatch[500],
+                        color: AppColors
+                            .dark[500], // Menggunakan warna gelap agar mudah dibaca
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       status,
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                      style: TextStyle(
+                        color: statusColor, // <--- UBAH MENJADI statusColor
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-            const VerticalDivider(width: 1, color: Colors.grey),
+            const VerticalDivider(
+              width: 1,
+              color: Color(0xFFEEEEEE),
+              thickness: 1,
+            ),
             Expanded(flex: 2, child: _buildTimeDisplay('Clock In', clockIn)),
-            const VerticalDivider(width: 1, color: Colors.grey),
+            const VerticalDivider(
+              width: 1,
+              color: Color(0xFFEEEEEE),
+              thickness: 1,
+            ),
             Expanded(flex: 2, child: _buildTimeDisplay('Clock Out', clockOut)),
             const SizedBox(width: 16),
           ],
@@ -629,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildHeaderRow(String title) {
+  Widget _buildHeaderRow(String title, {VoidCallback? onSeeAllTap}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -637,9 +672,21 @@ class _HomeScreenState extends State<HomeScreen> {
           title,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
-        const Text(
-          'See All',
-          style: TextStyle(color: Colors.grey, fontSize: 13),
+        GestureDetector(
+          onTap: onSeeAllTap, // Menerima aksi klik dari luar
+          behavior: HitTestBehavior.opaque, // Membuat area klik lebih responsif
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
+            child: Text(
+              'See All',
+              style: TextStyle(
+                color: AppColors
+                    .primary[500], // Ubah ke warna biru primer agar terlihat bisa diklik
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -717,6 +764,20 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
+
+  // --- Universal Semantic Color Helper ---
+  Color _getSemanticColor(String? status) {
+    if (status == null) return Colors.red[500]!;
+
+    String s = status.toLowerCase();
+    if (s.contains('hadir') || s.contains('reguler') || s.contains('present')) {
+      return AppColors.primary[500]!; // 🔵 Blue for Present
+    } else if (s.contains('telat') || s.contains('late')) {
+      return Colors.green[500]!; // 🟢 Green for Late
+    } else {
+      return Colors.red[500]!; // 🔴 Red for Absent
+    }
+  }
 }
 
 class CustomBottomNavBar extends StatelessWidget {
@@ -763,7 +824,18 @@ class CustomBottomNavBar extends StatelessWidget {
             },
           ),
 
-          _buildNavItem(Icons.calendar_today_outlined),
+          // 3. Calendar ->
+          _buildNavItem(
+            Icons.calendar_today_outlined,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AttendanceReportScreen(),
+                ),
+              );
+            },
+          ),
           _buildNavItem(Icons.notifications_none_outlined),
           _buildNavItem(Icons.person_outline_outlined),
         ],

@@ -26,4 +26,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/attendance/today', [AttendanceController::class, 'getTodayStatus'])->name('api.attendance.today');
     Route::get('/attendance/monthly-stats', [AttendanceController::class, 'getMonthlyStats'])->name('api.attendance.monthlystats');
     Route::get('/attendance/history', [AttendanceController::class, 'getHistory'])->name('api.attendance.history');
+    Route::get('/attendance/report', [AttendanceController::class, 'getMonthlyReport'])->name('api.attendance.report');
 });

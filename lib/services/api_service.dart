@@ -2,14 +2,12 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart'; // For debugPrint
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_model.dart';
 
 class ApiService {
-  // ⚠️ NOTE: If debugging on a real Android device, change this to your laptop's Wi-Fi IP (e.g., http://192.168.1.15:8000/api)
-  // If using Android Emulator, use http://192.168.1.2:80/api
   // static const String baseUrl = "http://absensigeo.test/api";
   static const String baseUrl = "http://192.168.1.2:80/api";
 

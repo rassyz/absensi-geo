@@ -1,7 +1,8 @@
 // lib/screens/attendance_screen.dart
 
 import 'package:absensi_geo/providers/auth_provider.dart';
-import 'package:absensi_geo/services/api_service.dart';
+// import 'package:absensi_geo/services/api_service.dart';
+import 'package:absensi_geo/services/attendance_service.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -20,7 +21,7 @@ class AttendanceScreen extends StatefulWidget {
 }
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
-  final ApiService apiService = ApiService();
+  final AttendanceService _attendanceService = AttendanceService();
   final ImagePicker _picker = ImagePicker();
   File? _capturedImage;
 
@@ -89,7 +90,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final token = authProvider.user?.token;
 
     if (token != null) {
-      final statusData = await apiService.getTodayAttendanceStatus(token);
+      final statusData = await _attendanceService.getTodayAttendanceStatus(
+        token,
+      );
 
       if (statusData != null && statusData['success'] == true && mounted) {
         setState(() {
@@ -142,7 +145,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final token = authProvider.user?.token;
 
     if (token != null) {
-      final zoneData = await apiService.getUserAttendanceZone(token);
+      final zoneData = await _attendanceService.getUserAttendanceZone(token);
 
       if (zoneData != null && mounted) {
         setState(() {
@@ -186,7 +189,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      final result = await apiService.submitAttendance(
+      final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,
         latitude: _userLocation!.latitude,

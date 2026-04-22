@@ -1,10 +1,11 @@
 // lib/providers/auth_provider.dart
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
-import '../services/api_service.dart';
+// import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final ApiService apiService;
+  final AuthService authService;
 
   // --- API State ---
   UserModel? _user;
@@ -16,7 +17,7 @@ class AuthProvider extends ChangeNotifier {
   bool _obscureConfirmPassword = true;
   bool _agreeToTerms = false;
 
-  AuthProvider(this.apiService);
+  AuthProvider(this.authService);
 
   // --- Getters ---
   UserModel? get user => _user;
@@ -50,7 +51,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      UserModel? result = await apiService.login(email, password);
+      UserModel? result = await authService.login(email, password);
       if (result != null) {
         _user = result;
         return true;
@@ -76,7 +77,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await apiService.register(name, email, password, passwordConfirmation);
+      await authService.register(name, email, password, passwordConfirmation);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -94,7 +95,7 @@ class AuthProvider extends ChangeNotifier {
 
     if (token != null) {
       // 2. Call the API to delete the token from the database
-      await apiService.logout(token);
+      await authService.logout(token);
     }
 
     // 3. Reset the local state
@@ -104,7 +105,7 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> getUserProfile() async {
     try {
-      UserModel? result = await apiService.getUserProfile();
+      UserModel? result = await authService.getUserProfile();
       if (result != null) {
         _user = result;
         notifyListeners();

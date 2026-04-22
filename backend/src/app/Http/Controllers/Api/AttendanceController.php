@@ -360,22 +360,26 @@ class AttendanceController extends Controller
         try {
             $employeeId = $request->user()->employee->id;
 
-            // Ambil 3 data absensi terbaru
+            // Ambil 5 data absensi terbaru
             $attendances = Attendance::where('employee_id', $employeeId)
                 ->orderBy('check_in', 'desc')
-                ->take(3)
+                ->take(5)
                 ->get()
                 ->map(function ($att) {
+                    $checkInTime = \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta');
+                    $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
+
+                    // 👇 KALKULASI STATUS OTOMATIS 👇
+                    $status = ucfirst($att->status ?? 'Hadir');
+                    if ($checkInTime->format('H:i:s') > '09:00:00') {
+                        $status = 'Telat';
+                    }
+
                     return [
-                        'date'      => \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta')->format('j F Y'),
-                        // Pastikan status diformat rapi (misal: "hadir" jadi "Hadir")
-                        'status'    => ucfirst($att->status ?? 'Reguler'),
-                        'check_in'  => $att->check_in
-                                        ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta')->format('H : i : s')
-                                        : '-- : -- : --',
-                        'check_out' => $att->check_out
-                                        ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta')->format('H : i : s')
-                                        : '-- : -- : --',
+                        'date'      => $checkInTime->translatedFormat('j F Y'),
+                        'status'    => $status,
+                        'check_in'  => $checkInTime->format('H : i : s'),
+                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : '-- : -- : --',
                     ];
                 });
 
@@ -387,6 +391,81 @@ class AttendanceController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal mengambil riwayat absensi.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get full monthly report (Stats + History) based on filter.
+     */
+    public function getMonthlyReport(Request $request)
+    {
+        try {
+            $employeeId = $request->user()->employee->id;
+
+            // Catch the variables from Flutter, default to current month/year if empty
+            $month = $request->query('month', \Carbon\Carbon::now()->month);
+            $year = $request->query('year', \Carbon\Carbon::now()->year);
+
+            // 1. Calculate Stats for this specific month/year
+            $totalAttendance = Attendance::where('employee_id', $employeeId)
+                ->whereMonth('check_in', $month)
+                ->whereYear('check_in', $year)
+                ->count();
+
+            $lateClockIn = Attendance::where('employee_id', $employeeId)
+                ->whereMonth('check_in', $month)
+                ->whereYear('check_in', $year)
+                ->whereTime('check_in', '>', '09:00:00')
+                ->count();
+
+            $noClockIn = Attendance::where('employee_id', $employeeId)
+                ->whereMonth('created_at', $month)
+                ->whereYear('created_at', $year)
+                ->whereNull('check_in')
+                ->count();
+
+            // 2. Fetch Full History for the calendar & list
+            $attendances = Attendance::where('employee_id', $employeeId)
+                ->whereMonth('check_in', $month)
+                ->whereYear('check_in', $year)
+                ->orderBy('check_in', 'desc')
+                ->get()
+                ->map(function ($att) {
+                    // Parse the times into the correct timezone first
+                    $checkInTime = \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta');
+                    $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
+
+                    // 👇 DYNAMIC STATUS CALCULATION 👇
+                    $status = ucfirst($att->status ?? 'Hadir');
+                    // If they clocked in strictly after 09:00:00, force the status to 'Telat'
+                    if ($checkInTime->format('H:i:s') > '09:00:00') {
+                        $status = 'Telat';
+                    }
+
+                    return [
+                        'raw_date'  => $checkInTime->format('Y-m-d'),
+                        'date'      => $checkInTime->translatedFormat('j F Y'),
+                        'status'    => $status, // Send the newly calculated status!
+                        'check_in'  => $checkInTime->format('H : i : s'),
+                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : '-- : -- : --',
+                    ];
+                });
+
+            // 3. Return everything together!
+            return response()->json([
+                'success' => true,
+                'stats' => [
+                    'total_attendance' => str_pad($totalAttendance, 2, '0', STR_PAD_LEFT),
+                    'late_clock_in'    => str_pad($lateClockIn, 2, '0', STR_PAD_LEFT),
+                    'no_clock_in'      => str_pad($noClockIn, 2, '0', STR_PAD_LEFT),
+                ],
+                'history' => $attendances
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil data laporan: ' . $e->getMessage()
             ], 500);
         }
     }
