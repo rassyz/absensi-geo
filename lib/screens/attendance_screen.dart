@@ -1,7 +1,7 @@
 // lib/screens/attendance_screen.dart
 
+import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
-// import 'package:absensi_geo/services/api_service.dart';
 import 'package:absensi_geo/services/attendance_service.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +32,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   LatLng? _officeLocation;
   LatLng? _userLocation;
   bool _isLoadingMap = true;
-  // String _departmentName = "Loading...";
 
   // --- Real-Time Attendance State ---
   bool _hasCheckedIn = false;
@@ -44,16 +43,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void initState() {
     super.initState();
     _initializeAttendanceData();
-    // TODO: Ideally, you should also fetch today's attendance status from
-    // the API here to set _hasCheckedIn and _checkInTime if they already
-    // clocked in earlier today.
   }
 
   Future<void> _initializeAttendanceData() async {
-    // 1. Check Today's API Status FIRST (so the UI updates immediately)
     await _fetchTodayStatus();
 
-    // 2. Fetch GPS
     try {
       await _getUserLocation();
     } catch (e) {
@@ -69,7 +63,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
     }
 
-    // 3. Fetch Database Polygon
     try {
       await _fetchAttendanceZone();
     } catch (e) {
@@ -84,7 +77,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  // --- Get Today's Status ---
   Future<void> _fetchTodayStatus() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.user?.token;
@@ -130,6 +122,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
 
     Position position = await Geolocator.getCurrentPosition(
+      // ignore: deprecated_member_use
       desiredAccuracy: LocationAccuracy.high,
     );
 
@@ -156,7 +149,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  // Unified method to handle the camera and submission based on current state
   Future<void> _processAttendance(String token) async {
     if (_userLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,7 +160,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    // Determine action based on state
     bool isCheckIn = !_hasCheckedIn;
 
     final XFile? photo = await _picker.pickImage(
@@ -201,7 +192,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       Navigator.pop(context);
 
-      // If successful, update the UI timeline and buttons
       if (result['success'] == true) {
         setState(() {
           String currentTime = DateFormat(
@@ -215,6 +205,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             _checkOutTime = currentTime;
           }
         });
+
+        Provider.of<AttendanceUpdateProvider>(
+          context,
+          listen: false,
+        ).notifyUpdate();
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -263,7 +258,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
     }
 
-    // Determine Main Button text and state
     String mainButtonText = "Check In";
     if (_hasCheckedIn && !_hasCheckedOut) {
       mainButtonText = "Check Out";
@@ -276,21 +270,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.white[500],
         elevation: 0,
-        leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.gray[10],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.arrow_back_ios_new,
-              size: 16,
-              color: AppColors.dark[500],
-            ),
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        // Smart Back Button diaktifkan kembali
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.gray[10],
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.arrow_back_ios_new,
+                    size: 16,
+                    color: AppColors.dark[500],
+                  ),
+                ),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: Text(
           'Clock In',
           style: TextStyle(
@@ -321,20 +318,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       ),
       body: Stack(
         children: [
+          // 1. Peta di lapisan paling bawah (Full Screen)
           _buildMap(),
+
+          // 2. Pemilih Tanggal melayang di atas peta
           Positioned(top: 16, left: 16, right: 16, child: _buildDateSelector()),
 
-          // Camera Floating Action Button is completely removed from here.
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildBottomCard(
-              user?.employee?.fullName ?? user?.name ?? 'Guest',
-              displayPosition,
-              user?.token ?? '',
-              mainButtonText,
-            ),
+          // 3. Kartu Bawah yang Bisa Digeser (Draggable Sheet)
+          DraggableScrollableSheet(
+            initialChildSize: 0.45, // Saat pertama buka, menutupi 45% layar
+            minChildSize:
+                0.25, // Bisa ditarik turun sampai 25% (hanya kelihatan foto profil & tombol)
+            maxChildSize: 0.70, // Bisa ditarik naik sampai 70% layar
+            builder: (BuildContext context, ScrollController scrollController) {
+              return _buildBottomCard(
+                user?.employee?.fullName ?? user?.name ?? 'Guest',
+                displayPosition,
+                user?.token ?? '',
+                mainButtonText,
+                scrollController, // Lempar controllernya ke fungsi build kartu
+              );
+            },
           ),
         ],
       ),
@@ -446,136 +450,163 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String position,
     String token,
     String mainButtonText,
+    ScrollController scrollController, // <-- Menangkap Scroll Controller
   ) {
     return Container(
-      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: AppColors.white[500],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        // Tambahkan bayangan (shadow) sedikit agar terlihat terpisah dari peta
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 15,
+            offset: const Offset(0, -5),
+          ),
+        ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(2),
+      // Dibungkus dengan SingleChildScrollView yang menggunakan controller dari DraggableSheet
+      child: SingleChildScrollView(
+        controller: scrollController,
+        // Padding bawah tetap 110px agar tidak menabrak Navigasi Kapsul Global
+        padding: const EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 12,
+          bottom: 110,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // --- DRAG HANDLE (Pill abu-abu kecil di atas kartu) ---
+            Center(
+              child: Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.primary[500]!,
-                    width: 1.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: AppColors.gray[500],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      userName,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: AppColors.dark[500],
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      position,
-                      style: TextStyle(
-                        color: AppColors.gray[500],
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Status Badge based on state
-              if (_hasCheckedIn)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary[500],
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    'Active',
-                    style: TextStyle(
-                      color: AppColors.white[500],
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
-          ),
-
-          // Check In Timeline
-          _buildTimelineItem(
-            time: _checkInTime, // Dynamic time
-            label: 'Clock In',
-            isCompleted: _hasCheckedIn,
-            isLast: false,
-            buttonText: 'Clock In',
-            isButtonActive: !_hasCheckedIn, // Active if NOT checked in
-          ),
-
-          // Check Out Timeline
-          _buildTimelineItem(
-            time: _checkOutTime, // Dynamic time
-            label: 'Clock Out',
-            isCompleted: _hasCheckedOut,
-            isLast: true,
-            buttonText: 'Clock Out',
-            isButtonActive:
-                _hasCheckedIn &&
-                !_hasCheckedOut, // Active only after check-in and before check-out
-          ),
-
-          const SizedBox(height: 24),
-
-          // Dynamic Main Button
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton(
-              onPressed: _hasCheckedOut
-                  ? null
-                  : () => _processAttendance(token),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _hasCheckedOut
-                    ? AppColors.gray[500]
-                    : AppColors.primary[500],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                mainButtonText,
-                style: TextStyle(
-                  color: AppColors.white[500],
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
-          ),
-        ],
+
+            // --- KONTEN KARTU ABSENSI ---
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.primary[500]!,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppColors.gray[500],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: AppColors.dark[500],
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        position,
+                        style: TextStyle(
+                          color: AppColors.gray[500],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_hasCheckedIn)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary[500],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Active',
+                      style: TextStyle(
+                        color: AppColors.white[500],
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
+            ),
+
+            _buildTimelineItem(
+              time: _checkInTime,
+              label: 'Clock In',
+              isCompleted: _hasCheckedIn,
+              isLast: false,
+              buttonText: 'Clock In',
+              isButtonActive: !_hasCheckedIn,
+            ),
+
+            _buildTimelineItem(
+              time: _checkOutTime,
+              label: 'Clock Out',
+              isCompleted: _hasCheckedOut,
+              isLast: true,
+              buttonText: 'Clock Out',
+              isButtonActive: _hasCheckedIn && !_hasCheckedOut,
+            ),
+
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _hasCheckedOut
+                    ? null
+                    : () => _processAttendance(token),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _hasCheckedOut
+                      ? AppColors.gray[500]
+                      : AppColors.primary[500],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  mainButtonText,
+                  style: TextStyle(
+                    color: AppColors.white[500],
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,9 +1,10 @@
 <?php
 
+use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\LeaveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\AttendanceController;
 
 Route::post('/register', [AuthController::class, 'register'])->name('api.register');
 Route::post('/login', [AuthController::class, 'login'])->name('api.login');
@@ -27,4 +28,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/attendance/monthly-stats', [AttendanceController::class, 'getMonthlyStats'])->name('api.attendance.monthlystats');
     Route::get('/attendance/history', [AttendanceController::class, 'getHistory'])->name('api.attendance.history');
     Route::get('/attendance/report', [AttendanceController::class, 'getMonthlyReport'])->name('api.attendance.report');
+    Route::get('/leaves/dashboard', [LeaveController::class, 'getLeaveDashboard'])->name('api.leaves.dashboard');
+    Route::post('/leaves/apply', [LeaveController::class, 'store'])->name('api.leaves.apply');
+    Route::post('/leaves/{id}/process', [LeaveController::class, 'process'])->name('api.leaves.process');
 });

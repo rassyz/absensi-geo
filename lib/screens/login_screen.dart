@@ -1,4 +1,5 @@
 import 'package:absensi_geo/providers/auth_provider.dart';
+import 'package:absensi_geo/screens/main_screen.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,9 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // Don't forget to import the MainScreen at the top of your file!
+  // import 'package:absensi_geo/screens/main_screen.dart';
+
   void _handleLogin() async {
     // 1. Get the provider without listening (for triggering the method)
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -43,8 +47,12 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      // Navigate to Home and clear the stack
-      Navigator.pushReplacementNamed(context, '/home');
+
+      // 👇 CHANGED: Navigate to the new MainScreen (the shell with the Bottom Nav Bar)
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MainScreen()),
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -1,21 +1,32 @@
-import 'package:absensi_geo/providers/auth_provider.dart';
-import 'package:absensi_geo/screens/splash_screen.dart';
-import 'package:absensi_geo/screens/home_screen.dart';
-import 'package:absensi_geo/screens/login_screen.dart';
-import 'package:absensi_geo/screens/register_screen.dart';
-import 'package:absensi_geo/services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+// --- Providers ---
+import 'package:absensi_geo/providers/auth_provider.dart';
+import 'package:absensi_geo/providers/attendance_update_provider.dart'; // 👇 Import Provider Baru
+
+// --- Screens ---
+import 'package:absensi_geo/screens/splash_screen.dart';
+import 'package:absensi_geo/screens/login_screen.dart';
+import 'package:absensi_geo/screens/register_screen.dart';
+import 'package:absensi_geo/screens/home_screen.dart';
+import 'package:absensi_geo/screens/main_screen.dart'; // 👇 Import MainScreen (Navigasi Global)
+
+// --- Services ---
+import 'package:absensi_geo/services/auth_service.dart';
+
 void main() {
-  // 2. Initialize your new AuthService instead of ApiService
+  // 1. Initialize your new AuthService instead of ApiService
   final authService = AuthService();
 
   runApp(
     MultiProvider(
       providers: [
-        // 3. Pass the authService into the AuthProvider
+        // 2. Pass the authService into the AuthProvider
         ChangeNotifierProvider(create: (_) => AuthProvider(authService)),
+
+        // 👇 3. DAFTARKAN PROVIDER UPDATE ABSENSI DI SINI 👇
+        ChangeNotifierProvider(create: (_) => AttendanceUpdateProvider()),
       ],
       child: const MyApp(),
     ),
@@ -35,8 +46,8 @@ class MyApp extends StatelessWidget {
         '/splash': (context) => const SplashScreen(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
-        '/home': (context) =>
-            const HomeScreen(), // Note: Make sure HomeScreen has const constructor if possible
+        '/home': (context) => const HomeScreen(),
+        '/main': (context) => const MainScreen(),
       },
     );
   }

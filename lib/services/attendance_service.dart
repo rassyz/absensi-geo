@@ -162,4 +162,25 @@ class AttendanceService extends BaseApiService {
       return null;
     }
   }
+
+  // // Di dalam kelas ApiService atau LeaveService Anda:
+  // Future<Map<String, dynamic>?> getLeaveDashboard(String token) async {
+  //   try {
+  //     final response = await http.get(
+  //       Uri.parse('${BaseApiService.baseUrl}/leaves/dashboard'),
+  //       headers: {
+  //         'Authorization': 'Bearer $token',
+  //         'Accept': 'application/json',
+  //       },
+  //     );
+
+  //     if (response.statusCode == 200) {
+  //       return jsonDecode(response.body);
+  //     }
+  //     return null;
+  //   } catch (e) {
+  //     debugPrint("API Error fetching leave dashboard: $e");
+  //     return null;
+  //   }
+  // }
 }

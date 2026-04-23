@@ -1,14 +1,14 @@
 // lib/screens/home_screen.dart
 
+import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/services/attendance_service.dart';
-// import 'package:absensi_geo/services/api_service.dart'; // Added API Service
 import 'package:intl/intl.dart';
 import 'dart:async';
-import 'package:absensi_geo/screens/attendance_screen.dart';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
+import 'package:absensi_geo/screens/leave_request_screen.dart';
 
 // --- Inline Color/Theme Definitions ---
 class AppColors {
@@ -89,7 +89,6 @@ class AttendanceApp extends StatelessWidget {
   }
 }
 
-// 1. Converted to StatefulWidget to hold live API data
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -100,44 +99,48 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final AttendanceService _attendanceService = AttendanceService();
 
-  // State variable for attendance history
   List<dynamic> _recentAttendances = [];
-
-  // State variables for real-time display
   String _checkInTime = '-- : -- : --';
   String _checkOutTime = '-- : -- : --';
-
-  // NEW: State variables for monthly stats
   String _totalAttendance = '--';
   String _lateClockIn = '--';
   String _noClockIn = '--';
+  int _lastUpdateCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchHomeData(); // Fetch data when the screen loads
+    _fetchHomeData();
   }
 
-  // 2. Fetch data from Laravel (Renamed to fetch everything at once)
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Dengarkan provider (tanpa mengubah UI secara paksa)
+    final updateCount = Provider.of<AttendanceUpdateProvider>(
+      context,
+    ).updateCount;
+
+    // Jika jumlah update bertambah (artinya baru saja absen)
+    if (updateCount > _lastUpdateCount) {
+      _lastUpdateCount = updateCount;
+      _fetchHomeData(); // Ambil ulang data dari server secara diam-diam!
+    }
+  }
+
   Future<void> _fetchHomeData() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.user?.token;
 
     if (token != null) {
-      // 1. Fetch Today's Clock In/Out Status
       final statusData = await _attendanceService.getTodayAttendanceStatus(
         token,
       );
-
-      // 2. Fetch Monthly Stats
       final statsData = await _attendanceService.getMonthlyStats(token);
-
-      // 3. Fetch Attendance History
       final historyData = await _attendanceService.getAttendanceHistory(token);
 
       if (mounted) {
         setState(() {
-          // Process Today's Data
           if (statusData != null && statusData['success'] == true) {
             bool hasCheckedIn = statusData['has_checked_in'] ?? false;
             bool hasCheckedOut = statusData['has_checked_out'] ?? false;
@@ -150,14 +153,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 : '-- : -- : --';
           }
 
-          // Process Monthly Data
           if (statsData != null && statsData['success'] == true) {
             _totalAttendance = statsData['total_attendance'] ?? '--';
             _lateClockIn = statsData['late_clock_in'] ?? '--';
             _noClockIn = statsData['no_clock_in'] ?? '--';
           }
 
-          // Process History Data
           if (historyData != null) {
             _recentAttendances = historyData;
           }
@@ -173,45 +174,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 12.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildStatusGreeting(
-                    context,
-                    authProvider,
-                    user?.employee?.fullName ?? 'Guest',
-                  ),
-                  const SizedBox(height: 20),
-                  _buildSearchFilterBar(),
-                  const SizedBox(height: 24),
-                  _buildMainGradientCard(context),
-                  const SizedBox(height: 24),
-                  _buildSummaryStatsRow(),
-                  const SizedBox(height: 28),
-                  _buildCategorySection(context),
-                  const SizedBox(height: 28),
-                  _buildAttendanceDataSection(context),
-                  const SizedBox(height: 100),
-                ],
-              ),
+      // 👇 Stack has been removed! Just a clean SafeArea and ScrollView now.
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh:
+              _fetchHomeData, // Akan menampilkan loading spinner bulat khas Android/iOS
+          color: AppColors.primary[500],
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(
+              left: 16.0,
+              right: 16.0,
+              top: 12.0,
+              bottom:
+                  100.0, // Ensures content scrolls past the floating nav bar
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStatusGreeting(
+                  context,
+                  authProvider,
+                  user?.employee?.fullName ?? 'Guest',
+                ),
+                const SizedBox(height: 20),
+                _buildSearchFilterBar(),
+                const SizedBox(height: 24),
+                _buildMainGradientCard(context),
+                const SizedBox(height: 24),
+                _buildSummaryStatsRow(),
+                const SizedBox(height: 28),
+                _buildCategorySection(context),
+                const SizedBox(height: 28),
+                _buildAttendanceDataSection(context),
+              ],
             ),
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            // 3. Pass the refresh function down to the Nav Bar!
-            child: CustomBottomNavBar(onReturnFromAttendance: _fetchHomeData),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -227,10 +225,6 @@ class _HomeScreenState extends State<HomeScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // const Text(
-            //   '9:41',
-            //   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-            // ),
             const SizedBox(height: 8),
             Text(
               _getGreeting(),
@@ -348,7 +342,6 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              // 4. Injected the dynamic state variables here!
               Expanded(child: _buildClockCard('CLOCK IN', _checkInTime)),
               const SizedBox(width: 16),
               Expanded(child: _buildClockCard('CLOCK OUT', _checkOutTime)),
@@ -400,8 +393,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        // Note: Changing "Your Absence" to "Total Present" usually makes more sense
-        // given the number is high (e.g. 27), but I kept the layout matching your design!
         _buildStatColumn('Your Absence', _totalAttendance),
         _buildStatColumn('Late Clock In', _lateClockIn),
         _buildStatColumn('No Clock In', _noClockIn),
@@ -434,7 +425,19 @@ class _HomeScreenState extends State<HomeScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildCategoryCard('Leave', Icons.access_time, isSelected: true),
+            _buildCategoryCard(
+              'Leave',
+              Icons.access_time,
+              isSelected: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LeaveRequestScreen(),
+                  ),
+                );
+              },
+            ),
             _buildCategoryCard('Overtime', Icons.history),
             _buildCategoryCard(
               'Timesheet',
@@ -476,53 +479,57 @@ class _HomeScreenState extends State<HomeScreen> {
     IconData icon, {
     bool isSelected = false,
     bool isViewAll = false,
+    VoidCallback? onTap,
   }) {
-    return Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.primarySwatch[500] : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: !isSelected && !isViewAll
-                ? Border.all(color: AppColors.dark05)
-                : null,
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.dark[500]!.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primarySwatch[500] : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: !isSelected && !isViewAll
+                  ? Border.all(color: AppColors.dark05)
+                  : null,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.dark[500]!.withValues(alpha: 0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(
+              icon,
+              color: isSelected
+                  ? Colors.white
+                  : (isViewAll
+                        ? Colors.grey[700]
+                        : AppColors.secondarySwatch[500]),
+              size: isViewAll ? 20 : 28,
+            ),
           ),
-          child: Icon(
-            icon,
-            color: isSelected
-                ? Colors.white
-                : (isViewAll
-                      ? Colors.grey[700]
-                      : AppColors.secondarySwatch[500]),
-            size: isViewAll ? 20 : 28,
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[800],
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[800],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildAttendanceDataSection(BuildContext context) {
     return Column(
       children: [
-        // 👇 TAMBAHKAN AKSI NAVIGASI DI SINI 👇
         _buildHeaderRow(
           'Attendance Data',
           onSeeAllTap: () {
@@ -536,9 +543,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 16),
 
-        // ... (kode list mapping attendanceHistory Anda tetap sama di bawah ini)
-
-        // Show a message if the database is empty
         if (_recentAttendances.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
@@ -550,9 +554,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // Dynamically loop through the database records
         ..._recentAttendances.map((record) {
-          // 👇 Dapatkan warna berdasarkan status 👇
           Color statusColor = _getSemanticColor(record['status']);
 
           return Padding(
@@ -562,10 +564,10 @@ class _HomeScreenState extends State<HomeScreen> {
               record['status'] ?? 'Reguler',
               record['check_in'] ?? '-- : -- : --',
               record['check_out'] ?? '-- : -- : --',
-              statusColor, // 👇 Lempar warnanya ke widget Item
+              statusColor,
             ),
           );
-        }), // .toList() is not required when using the spread operator (...)
+        }),
       ],
     );
   }
@@ -595,7 +597,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               width: 6,
               decoration: BoxDecoration(
-                color: statusColor, // <--- UBAH MENJADI statusColor
+                color: statusColor,
                 borderRadius: const BorderRadius.horizontal(
                   left: Radius.circular(16),
                 ),
@@ -614,15 +616,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: AppColors
-                            .dark[500], // Menggunakan warna gelap agar mudah dibaca
+                        color: AppColors.dark[500],
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       status,
                       style: TextStyle(
-                        color: statusColor, // <--- UBAH MENJADI statusColor
+                        color: statusColor,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -673,15 +674,14 @@ class _HomeScreenState extends State<HomeScreen> {
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         GestureDetector(
-          onTap: onSeeAllTap, // Menerima aksi klik dari luar
-          behavior: HitTestBehavior.opaque, // Membuat area klik lebih responsif
+          onTap: onSeeAllTap,
+          behavior: HitTestBehavior.opaque,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
             child: Text(
               'See All',
               style: TextStyle(
-                color: AppColors
-                    .primary[500], // Ubah ke warna biru primer agar terlihat bisa diklik
+                color: AppColors.primary[500],
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -765,117 +765,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- Universal Semantic Color Helper ---
   Color _getSemanticColor(String? status) {
     if (status == null) return Colors.red[500]!;
 
     String s = status.toLowerCase();
     if (s.contains('hadir') || s.contains('reguler') || s.contains('present')) {
-      return AppColors.primary[500]!; // 🔵 Blue for Present
+      return AppColors.primary[500]!;
     } else if (s.contains('telat') || s.contains('late')) {
-      return Colors.green[500]!; // 🟢 Green for Late
+      return Colors.green[500]!;
     } else {
-      return Colors.red[500]!; // 🔴 Red for Absent
+      return Colors.red[500]!;
     }
-  }
-}
-
-class CustomBottomNavBar extends StatelessWidget {
-  final VoidCallback?
-  onReturnFromAttendance; // ADDED: Callback for refreshing data!
-
-  const CustomBottomNavBar({super.key, this.onReturnFromAttendance});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: AppColors.gradient2,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primarySwatch[500]!.withValues(alpha: 0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildNavItem(Icons.home_outlined, isSelected: true),
-
-          // Updated clock icon to await the navigator
-          _buildNavItem(
-            Icons.access_time_outlined,
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AttendanceScreen(),
-                ),
-              );
-              // Once the user pops back to this screen, trigger the API refresh!
-              if (onReturnFromAttendance != null) {
-                onReturnFromAttendance!();
-              }
-            },
-          ),
-
-          // 3. Calendar ->
-          _buildNavItem(
-            Icons.calendar_today_outlined,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AttendanceReportScreen(),
-                ),
-              );
-            },
-          ),
-          _buildNavItem(Icons.notifications_none_outlined),
-          _buildNavItem(Icons.person_outline_outlined),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-    IconData icon, {
-    bool isSelected = false,
-    VoidCallback? onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(
-            icon,
-            color: isSelected
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.7),
-            size: 26,
-          ),
-          if (isSelected)
-            Positioned(
-              bottom: -10,
-              child: Container(
-                width: 5,
-                height: 5,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }
 
@@ -893,7 +793,6 @@ class _LiveDateClockState extends State<LiveDateClock> {
   @override
   void initState() {
     super.initState();
-    // _fetchHomeData();
     _currentTime = DateTime.now();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
