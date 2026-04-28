@@ -4,3 +4,4 @@ db/data/*
 #src/.env
 #*/src/.env
 .env
+*/.env
