@@ -2,6 +2,7 @@
 
 namespace App\Filament\Admin\Resources\Attendances\Schemas;
 
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -22,9 +23,13 @@ class AttendanceForm
                     ->label('Zona Absensi')
                     ->relationship('attendanceZone', 'name')
                     ->required(),
+                DatePicker::make('date')
+                    ->label('Tanggal')
+                    ->required()
+                    ->default(now()),
                 DateTimePicker::make('check_in')
                     ->label('Check-In')
-                    ->required()
+                    ->nullable()
                     ->seconds(false),
                 DateTimePicker::make('check_out')
                     ->label('Check-Out')
@@ -36,6 +41,9 @@ class AttendanceForm
                         'hadir' => 'Hadir',
                         'sakit' => 'Sakit',
                         'cuti' => 'Cuti',
+                        'absent' => 'Alpha',
+                        'late' => 'Telat',
+                        'early_leave' => 'Pulang Cepat',
                     ])
                     ->columnSpanFull()
                     ->required(),

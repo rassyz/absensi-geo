@@ -238,10 +238,11 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                         ),
                         onChanged: (bool? value) {
                           setModalState(() {
-                            if (value == true)
+                            if (value == true) {
                               tempStatuses.add(status);
-                            else
+                            } else {
                               tempStatuses.remove(status);
+                            }
                           });
                         },
                       ),
@@ -547,8 +548,9 @@ class _PersonalLeaveDetailModal extends StatelessWidget {
     String status = leave['status'] ?? 'Pending';
     if (status.toLowerCase() == 'pending') statusColor = Colors.orange;
     if (status.toLowerCase() == 'cancelled' ||
-        status.toLowerCase() == 'rejected')
+        status.toLowerCase() == 'rejected') {
       statusColor = Colors.red;
+    }
 
     // 👇 MENGAMBIL DATA NAMA & POSISI DINAMIS DARI AUTH PROVIDER 👇
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -774,7 +776,6 @@ class _TeamLeaveDetailModal extends StatelessWidget {
         positionInfo = pos;
       }
     }
-    ;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1168,8 +1169,9 @@ class _LeaveItem extends StatelessWidget {
     Color statusColor = Colors.green;
     if (status.toLowerCase() == 'pending') statusColor = Colors.orange;
     if (status.toLowerCase() == 'cancelled' ||
-        status.toLowerCase() == 'rejected')
+        status.toLowerCase() == 'rejected') {
       statusColor = Colors.red;
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),

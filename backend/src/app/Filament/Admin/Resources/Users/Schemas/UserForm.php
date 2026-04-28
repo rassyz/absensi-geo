@@ -19,6 +19,8 @@ final class UserForm
         return $schema
             ->components([
                 FileUpload::make('avatar_url')
+                    ->disk('public')
+                    ->directory('avatars')
                     ->label('Avatar')
                     ->image()
                     ->imageEditor()

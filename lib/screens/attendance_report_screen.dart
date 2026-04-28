@@ -379,7 +379,24 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
 
     return Column(
       children: _attendanceHistory.map((record) {
-        Color statusColor = _getSemanticColor(record['status']);
+        String status = record['status'] ?? 'Unknown';
+        Color statusColor = _getSemanticColor(status);
+
+        // 👇 LOGIKA N/A SEPERTI DI HOME SCREEN 👇
+        String rawClockIn = record['check_in']?.toString() ?? '';
+        String rawClockOut = record['check_out']?.toString() ?? '';
+
+        // 1. Jika clock-in kosong/null, langsung jadikan 'N/A'
+        String clockInDisplay = (rawClockIn.isEmpty || rawClockIn == 'null')
+            ? 'N/A'
+            : rawClockIn;
+
+        // 2. Jika clock-out kosong/null:
+        //    - Kalau clock-in juga 'N/A' (alpha) -> jadikan 'N/A'
+        //    - Kalau clock-in ada isinya (sedang bekerja) -> jadikan '-- : -- : --'
+        String clockOutDisplay = (rawClockOut.isEmpty || rawClockOut == 'null')
+            ? (clockInDisplay == 'N/A' ? 'N/A' : '-- : -- : --')
+            : rawClockOut;
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 12.0),
@@ -425,7 +442,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            record['status'] ?? 'Reguler',
+                            status,
                             style: TextStyle(
                               color: statusColor,
                               fontSize: 12,
@@ -445,8 +462,8 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     flex: 2,
                     child: _buildTimeDisplay(
                       'Clock In',
-                      record['check_in'] ?? '-- : -- : --',
-                    ),
+                      clockInDisplay,
+                    ), // 👈 Gunakan variabel N/A
                   ),
                   const VerticalDivider(
                     width: 1,
@@ -457,8 +474,8 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     flex: 2,
                     child: _buildTimeDisplay(
                       'Clock Out',
-                      record['check_out'] ?? '-- : -- : --',
-                    ),
+                      clockOutDisplay,
+                    ), // 👈 Gunakan variabel N/A
                   ),
                 ],
               ),

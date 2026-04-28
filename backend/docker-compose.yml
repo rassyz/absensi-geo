@@ -10,6 +10,20 @@ services:
     working_dir: /var/www/html
     depends_on:
       - absensigeo_db
+    networks:
+      - absensi_net
+
+  absensigeo_scheduler:
+    build: ./php
+    image: absensigeo_php:latest
+    container_name: absensigeo_scheduler
+    volumes:
+      - ./src:/var/www/html
+    command: su -s /bin/sh www-data -c "php artisan schedule:work"
+    depends_on:
+      - absensigeo_db
+    networks:
+      - absensi_net
 
   absensigeo_db:
     image: postgis/postgis:16-3.4
@@ -27,6 +41,8 @@ services:
       TZ: Asia/Jakarta
       SERVICE_TAGS: dev
       SERVICE_NAME: absensigeo_db
+    networks:
+      - absensi_net
 
   absensigeo_nginx:
     build: ./nginx
@@ -42,3 +58,24 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl
     depends_on:
       - absensigeo
+    networks:
+      - absensi_net
+
+  absensigeo_ngrok:
+    image: ngrok/ngrok:latest
+    container_name: absensigeo_ngrok
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTH_TOKEN}
+    command:
+      - "http"
+      # - "--domain=gallery-wham-jaunt.ngrok-free.dev"
+      - "absensigeo_nginx:80"
+    depends_on:
+      - absensigeo_nginx
+    networks:
+      - absensi_net
+
+networks:
+  absensi_net:
+    driver: bridge

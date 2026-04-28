@@ -6,7 +6,9 @@ import 'package:absensi_geo/screens/leave_request_screen.dart';
 import 'package:absensi_geo/screens/attendance_screen.dart';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
 
-// 👇 Import your newly created nav bar file!
+// 👇 1. IMPORT FILE PROFILE SCREEN YANG BARU DIBUAT 👇
+import 'package:absensi_geo/screens/profile_screen.dart';
+
 import 'package:absensi_geo/widgets/custom_bottom_nav.dart';
 
 class MainScreen extends StatefulWidget {
@@ -24,7 +26,8 @@ class _MainScreenState extends State<MainScreen> {
     const AttendanceScreen(),
     const LeaveRequestScreen(),
     const AttendanceReportScreen(),
-    const Center(child: Text("Profile Screen")),
+    // 👇 2. GANTI PLACEHOLDER TEXT DENGAN WIDGET PROFILE SCREEN 👇
+    const ProfileScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -37,10 +40,8 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      // 1. We use a Stack so the Nav Bar floats perfectly above the screen content
       body: Stack(
         children: [
-          // ✅ Ini menyimpan semua layar di memori, sehingga pergantian tab menjadi INSTAN!
           IndexedStack(index: _selectedIndex, children: _screens),
 
           Positioned(

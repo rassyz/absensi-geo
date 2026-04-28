@@ -11,6 +11,7 @@ class EmployeeModel {
   final String? address;
   // --- Added this field ---
   final String? departmentName;
+  final String? avatarUrl;
 
   EmployeeModel({
     this.id,
@@ -22,6 +23,7 @@ class EmployeeModel {
     this.phone,
     this.address,
     this.departmentName, // Added to constructor
+    this.avatarUrl,
   });
 
   factory EmployeeModel.fromJson(Map<String, dynamic> json) {
@@ -45,6 +47,7 @@ class EmployeeModel {
       departmentName: json['department'] != null
           ? json['department']['name'] as String?
           : null,
+      avatarUrl: json['avatar_url'],
     );
   }
 }

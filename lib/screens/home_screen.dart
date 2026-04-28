@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'dart:async';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
 import 'package:absensi_geo/screens/leave_request_screen.dart';
+import 'package:absensi_geo/screens/profile_screen.dart';
 
 // --- Inline Color/Theme Definitions ---
 class AppColors {
@@ -100,8 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final AttendanceService _attendanceService = AttendanceService();
 
   List<dynamic> _recentAttendances = [];
-  String _checkInTime = '-- : -- : --';
-  String _checkOutTime = '-- : -- : --';
+  String _clockInTime = '-- : -- : --';
+  String _clockOutTime = '-- : -- : --';
   String _totalAttendance = '--';
   String _lateClockIn = '--';
   String _noClockIn = '--';
@@ -142,13 +143,14 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           if (statusData != null && statusData['success'] == true) {
-            bool hasCheckedIn = statusData['has_checked_in'] ?? false;
-            bool hasCheckedOut = statusData['has_checked_out'] ?? false;
+            // Mengambil key check_in dari API, tapi menyimpannya ke variabel clock_in
+            bool hasClockedIn = statusData['has_checked_in'] ?? false;
+            bool hasClockedOut = statusData['has_checked_out'] ?? false;
 
-            _checkInTime = hasCheckedIn
+            _clockInTime = hasClockedIn
                 ? (statusData['check_in_time'] ?? '-- : -- : --')
                 : '-- : -- : --';
-            _checkOutTime = hasCheckedOut
+            _clockOutTime = hasClockedOut
                 ? (statusData['check_out_time'] ?? '-- : -- : --')
                 : '-- : -- : --';
           }
@@ -160,7 +162,20 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           if (historyData != null) {
-            _recentAttendances = historyData;
+            // Plester Darurat: Filter data duplikat berdasarkan tanggal
+            var uniqueAttendances = [];
+            var seenDates = <String>{};
+
+            for (var record in historyData) {
+              String date = record['date']?.toString() ?? '';
+
+              if (!seenDates.contains(date)) {
+                seenDates.add(date);
+                uniqueAttendances.add(record);
+              }
+            }
+
+            _recentAttendances = uniqueAttendances;
           }
         });
       }
@@ -174,19 +189,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      // 👇 Stack has been removed! Just a clean SafeArea and ScrollView now.
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh:
-              _fetchHomeData, // Akan menampilkan loading spinner bulat khas Android/iOS
+          onRefresh: _fetchHomeData,
           color: AppColors.primary[500],
           child: SingleChildScrollView(
             padding: const EdgeInsets.only(
               left: 16.0,
               right: 16.0,
               top: 12.0,
-              bottom:
-                  100.0, // Ensures content scrolls past the floating nav bar
+              bottom: 100.0,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,6 +231,8 @@ class _HomeScreenState extends State<HomeScreen> {
     AuthProvider authProvider,
     String userName,
   ) {
+    final String? avatarUrl = authProvider.user?.avatarUrl;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -232,13 +246,18 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Hello, $userName!',
+              '$userName!',
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ],
         ),
         GestureDetector(
-          onTap: () => _showLogoutDialog(context, authProvider),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
+            );
+          },
           child: Container(
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
@@ -248,10 +267,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 2,
               ),
             ),
-            child: const CircleAvatar(
+            child: CircleAvatar(
               radius: 24,
-              backgroundColor: Colors.grey,
-              child: Icon(Icons.logout, color: Colors.white, size: 20),
+              backgroundColor: Colors.grey.shade300,
+              backgroundImage: avatarUrl != null
+                  ? NetworkImage(avatarUrl)
+                  : null,
+              child: avatarUrl == null
+                  ? const Icon(Icons.person, color: Colors.white, size: 24)
+                  : null,
             ),
           ),
         ),
@@ -342,9 +366,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(child: _buildClockCard('CLOCK IN', _checkInTime)),
+              Expanded(child: _buildClockCard('CLOCK IN', _clockInTime)),
               const SizedBox(width: 16),
-              Expanded(child: _buildClockCard('CLOCK OUT', _checkOutTime)),
+              Expanded(child: _buildClockCard('CLOCK OUT', _clockOutTime)),
             ],
           ),
         ],
@@ -555,15 +579,33 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
         ..._recentAttendances.map((record) {
-          Color statusColor = _getSemanticColor(record['status']);
+          String status = record['status'] ?? 'Unknown';
+          Color statusColor = _getSemanticColor(status);
+
+          // Mengambil dari database key: 'check_in', tapi memakai nama variabel frontend: 'rawClockIn'
+          String rawClockIn = record['check_in']?.toString() ?? '';
+          String rawClockOut = record['check_out']?.toString() ?? '';
+
+          // 1. Jika clock-in kosong/null, langsung jadikan 'N/A'
+          String clockInDisplay = (rawClockIn.isEmpty || rawClockIn == 'null')
+              ? 'N/A'
+              : rawClockIn;
+
+          // 2. Jika clock-out kosong/null:
+          //    - Kalau clock-in juga 'N/A' (alpha) -> jadikan 'N/A'
+          //    - Kalau clock-in ada isinya (sedang bekerja) -> jadikan '-- : -- : --'
+          String clockOutDisplay =
+              (rawClockOut.isEmpty || rawClockOut == 'null')
+              ? (clockInDisplay == 'N/A' ? 'N/A' : '-- : -- : --')
+              : rawClockOut;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
             child: _buildAttendanceItem(
               record['date'] ?? '--',
-              record['status'] ?? 'Reguler',
-              record['check_in'] ?? '-- : -- : --',
-              record['check_out'] ?? '-- : -- : --',
+              status,
+              clockInDisplay,
+              clockOutDisplay,
               statusColor,
             ),
           );
@@ -703,66 +745,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       return 'Good Night';
     }
-  }
-
-  Future<void> _showLogoutDialog(
-    BuildContext context,
-    AuthProvider authProvider,
-  ) async {
-    return showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
-          title: const Text('Logout Confirmation'),
-          content: const Text(
-            'Are you sure you want to log out? Your current session will be ended.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) =>
-                      const Center(child: CircularProgressIndicator()),
-                );
-
-                await authProvider.logout();
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Logout Successful'),
-                      backgroundColor: Colors.green,
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-
-                  Navigator.pushReplacementNamed(context, '/login');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-              ),
-              child: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Color _getSemanticColor(String? status) {

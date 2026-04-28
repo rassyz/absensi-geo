@@ -60,6 +60,8 @@ class AttendanceService extends BaseApiService {
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
 
+      // print("RAW LARAVEL RESPONSE: ${response.body}");
+
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
         return {

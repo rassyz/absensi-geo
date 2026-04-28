@@ -244,8 +244,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                 value: _selectedLeaveType,
                 items: _leaveTypes,
                 onChanged: (String? newValue) {
-                  if (newValue != null)
+                  if (newValue != null) {
                     setState(() => _selectedLeaveType = newValue);
+                  }
                 },
               ),
               const SizedBox(height: 16),

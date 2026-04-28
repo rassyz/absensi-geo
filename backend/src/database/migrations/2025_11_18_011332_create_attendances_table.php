@@ -16,6 +16,7 @@ return new class extends Migration
 
             $table->foreignId('employee_id')->constrained('employees')->onDelete('cascade');
             $table->foreignId('attendance_zone_id')->constrained('attendance_zones')->onDelete('cascade');
+            $table->date('date');
             $table->timestamp('check_in')->nullable();
             $table->timestamp('check_out')->nullable();
             $table->decimal('check_in_latitude', 10, 8)->nullable();

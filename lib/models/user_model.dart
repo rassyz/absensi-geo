@@ -8,11 +8,14 @@ class UserModel {
   final String email;
   final EmployeeModel? employee; // Nested object!
 
+  final String? avatarUrl;
+
   UserModel({
     required this.token,
     required this.name,
     required this.email,
     this.employee,
+    this.avatarUrl,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -23,10 +26,10 @@ class UserModel {
       token: json['token'] ?? '',
       name: userObj['name'] ?? '',
       email: userObj['email'] ?? '',
-      // This is the critical part!
       employee: userObj['employee'] != null
           ? EmployeeModel.fromJson(userObj['employee'])
           : null,
+      avatarUrl: userObj['avatar_url'],
     );
   }
 }

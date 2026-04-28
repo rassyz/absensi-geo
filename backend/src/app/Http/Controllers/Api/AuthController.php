@@ -52,10 +52,24 @@ class AuthController extends Controller
         // buat token API
         $token = $user->createToken('login-token')->plainTextToken;
 
+        // 👇 PERUBAHAN FINAL: Fokus hanya pada tabel user 👇
+        $userData = $user->toArray();
+
+        // Ambil URL dasar dari .env untuk memastikan URL gambar benar
+        $mobileBaseUrl = config('app.url');
+
+        // Rakit URL secara manual tanpa menggunakan fungsi asset()
+        $userData['avatar_url'] = $user->avatar_url
+            ? $mobileBaseUrl . '/storage/' . $user->avatar_url
+            : null;
+
+        // MASUKKAN URL GAMBAR INTERNET SECARA PAKSA (HARDCODE)
+        // $userData['avatar_url'] = "https://picsum.photos/200";
+
         return response()->json([
             'message' => 'Login Berhasil',
             'token' => $token,
-            'user' => $user,
+            'user' => $userData,
         ]);
     }
 

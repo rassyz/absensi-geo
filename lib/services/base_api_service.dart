@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class BaseApiService {
   // Use your local IP for physical device testing
-  static const String baseUrl = "http://192.168.1.2:80/api";
+  static const String baseUrl = "https://gallery-wham-jaunt.ngrok-free.dev/api";
 
   /// Retrieves the stored authentication token
   Future<String?> getToken() async {
@@ -36,6 +36,7 @@ class BaseApiService {
       'Authorization': 'Bearer $token',
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
     };
   }
 }

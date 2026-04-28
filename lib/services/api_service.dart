@@ -9,7 +9,7 @@ import '../models/user_model.dart';
 
 class ApiService {
   // static const String baseUrl = "http://absensigeo.test/api";
-  static const String baseUrl = "http://192.168.1.2:80/api";
+  static const String baseUrl = "https://gallery-wham-jaunt.ngrok-free.dev/api";
 
   String? _authToken;
 

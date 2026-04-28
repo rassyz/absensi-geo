@@ -3,6 +3,7 @@
 namespace App\Filament\Admin\Resources\Attendances\Tables;
 
 use App\Exports\AttendanceExport;
+// use Dom\Text;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -30,6 +31,11 @@ class AttendancesTable
                 TextColumn::make('attendanceZone.name')
                     ->label('Zona Absensi')
                     ->sortable(),
+                TextColumn::make('date')
+                    ->label('Tanggal')
+                    ->date()
+                    ->sortable()
+                    ->searchable(),
                 TextColumn::make('check_in')
                     ->label('Check-In')
                     ->dateTime('d M Y - H:i')

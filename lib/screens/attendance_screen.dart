@@ -164,8 +164,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     final XFile? photo = await _picker.pickImage(
       source: ImageSource.camera,
-      preferredCameraDevice: CameraDevice.front,
-      imageQuality: 50,
+      imageQuality: 30,
+      maxWidth: 1080,
+      maxHeight: 1080,
     );
 
     if (photo != null) {

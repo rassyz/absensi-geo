@@ -12,6 +12,7 @@ class Attendance extends Model
     protected $fillable = [
         'employee_id',
         'attendance_zone_id',
+        'date',
         'check_in',
         'check_out',
         'check_in_latitude',
@@ -24,6 +25,7 @@ class Attendance extends Model
     ];
 
     protected $casts = [
+        'date'     => 'date',
         'check_in'  => 'datetime',
         'check_out' => 'datetime',
         'created_at' => 'datetime',

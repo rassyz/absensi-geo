@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\Attendance;
 use App\Models\AttendanceZone;
 use App\Models\User;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB; // Added for ST_AsText query
+use Illuminate\Support\Facades\Validator;
 
 class AttendanceController extends Controller
 {
@@ -97,18 +98,27 @@ class AttendanceController extends Controller
                 }
 
                 // 4. Simpan record absensi check-in
+                $checkInTime = now();
+                $workStart = \Carbon\Carbon::today()->setTime(9, 0, 0);
+
+                $today = Carbon::today()->toDateString();
+
+                // status: hadir / telat
+                $status = $checkInTime->gt($workStart) ? 'telat' : 'hadir';
+
                 $attendance = Attendance::create([
                     'employee_id'           => $request->user()->employee->id,
                     'attendance_zone_id'    => $this->getZoneId($request->user()),
-                    'check_in'              => now(),
+                    'date'                  => $today,
+                    'check_in'              => $checkInTime ?? 'N/A',
                     'check_in_latitude'     => $request->latitude,
                     'check_in_longitude'    => $request->longitude,
-                    'check_in_photo_path'   => $photoPath, // Simpan path foto di sini
+                    'check_in_photo_path'   => $photoPath,
                     'check_out'             => null,
                     'check_out_latitude'    => null,
                     'check_out_longitude'   => null,
                     'check_out_photo_path'  => null,
-                    'status'                => 'hadir',
+                    'status'                => $status, // 🔥 dynamic
                 ]);
 
                 return response()->json([
@@ -176,11 +186,11 @@ class AttendanceController extends Controller
 
                 // 5. Update record absensi check-out
                 $attendance->update([
-                    'check_out'             => now(),
+                    'check_out'             => now() ?? 'N/A',
                     'check_out_latitude'    => $request->latitude,
                     'check_out_longitude'   => $request->longitude,
                     'check_out_photo_path'  => $photoPath,
-                    'status'                => 'hadir',
+                    // 'status'                => 'hadir',
                 ]);
 
                 return response()->json([
@@ -362,24 +372,26 @@ class AttendanceController extends Controller
 
             // Ambil 5 data absensi terbaru
             $attendances = Attendance::where('employee_id', $employeeId)
-                ->orderBy('check_in', 'desc')
+                ->orderBy('date', 'desc')
                 ->take(5)
                 ->get()
                 ->map(function ($att) {
-                    $checkInTime = \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta');
+                    $actualDate = \Carbon\Carbon::parse($att->date)->timezone('Asia/Jakarta');
+
+                    $checkInTime = $att->check_in ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta') : null;
                     $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
 
-                    // 👇 KALKULASI STATUS OTOMATIS 👇
-                    $status = ucfirst($att->status ?? 'Hadir');
-                    if ($checkInTime->format('H:i:s') > '09:00:00') {
+                    $status = ucfirst($att->status ?? 'Absent');
+
+                    if ($checkInTime && $checkInTime->format('H : i : s') > '09:00:00') {
                         $status = 'Telat';
                     }
 
                     return [
-                        'date'      => $checkInTime->translatedFormat('j F Y'),
+                        'date'      => $actualDate->translatedFormat('j F Y'),
                         'status'    => $status,
-                        'check_in'  => $checkInTime->format('H : i : s'),
-                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : '-- : -- : --',
+                        'check_in'  => $checkInTime ? $checkInTime->format('H : i : s') : null,
+                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : null,
                     ];
                 });
 
@@ -390,7 +402,7 @@ class AttendanceController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil riwayat absensi.'
+                'message' => 'Gagal mengambil riwayat absensi: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -403,52 +415,59 @@ class AttendanceController extends Controller
         try {
             $employeeId = $request->user()->employee->id;
 
-            // Catch the variables from Flutter, default to current month/year if empty
             $month = $request->query('month', \Carbon\Carbon::now()->month);
             $year = $request->query('year', \Carbon\Carbon::now()->year);
 
             // 1. Calculate Stats for this specific month/year
             $totalAttendance = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('check_in', $month)
-                ->whereYear('check_in', $year)
+                ->whereMonth('date', $month)
+                ->whereYear('date', $year)
                 ->count();
 
+            // 🔥 PERBAIKAN: Gunakan kolom 'date' & pastikan 'check_in' tidak null
             $lateClockIn = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('check_in', $month)
-                ->whereYear('check_in', $year)
+                ->whereMonth('date', $month)
+                ->whereYear('date', $year)
+                ->whereNotNull('check_in')
                 ->whereTime('check_in', '>', '09:00:00')
                 ->count();
 
+            // 🔥 PERBAIKAN: Gunakan kolom 'date', bukan 'created_at'
             $noClockIn = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('created_at', $month)
-                ->whereYear('created_at', $year)
+                ->whereMonth('date', $month)
+                ->whereYear('date', $year)
                 ->whereNull('check_in')
                 ->count();
 
             // 2. Fetch Full History for the calendar & list
             $attendances = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('check_in', $month)
-                ->whereYear('check_in', $year)
-                ->orderBy('check_in', 'desc')
+                ->whereMonth('date', $month) // 🔥 Filter berdasarkan tanggal asli!
+                ->whereYear('date', $year)
+                ->orderBy('date', 'desc')    // 🔥 Urutkan berdasarkan tanggal asli!
                 ->get()
                 ->map(function ($att) {
-                    // Parse the times into the correct timezone first
-                    $checkInTime = \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta');
+                    // 🔥 PERBAIKAN: Ambil patokan tanggal murni dari database
+                    $actualDate = \Carbon\Carbon::parse($att->date)->timezone('Asia/Jakarta');
+
+                    // 🔥 PERBAIKAN: Cegah Carbon Trap! Hanya parse waktu jika datanya tidak null
+                    $checkInTime = $att->check_in ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta') : null;
                     $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
 
-                    // 👇 DYNAMIC STATUS CALCULATION 👇
-                    $status = ucfirst($att->status ?? 'Hadir');
-                    // If they clocked in strictly after 09:00:00, force the status to 'Telat'
-                    if ($checkInTime->format('H:i:s') > '09:00:00') {
+                    // DYNAMIC STATUS CALCULATION
+                    $status = ucfirst($att->status ?? 'Absent');
+
+                    // If they actually clocked in AND strictly after 09:00:00, force status to 'Telat'
+                    if ($checkInTime && $checkInTime->format('H : i : s') > '09:00:00') {
                         $status = 'Telat';
                     }
 
                     return [
-                        'raw_date'  => $checkInTime->format('Y-m-d'),
-                        'date'      => $checkInTime->translatedFormat('j F Y'),
-                        'status'    => $status, // Send the newly calculated status!
-                        'check_in'  => $checkInTime->format('H : i : s'),
-                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : '-- : -- : --',
+                        'raw_date'  => $actualDate->format('Y-m-d'), // Dibutuhkan Flutter untuk fitur kalender
+                        'date'      => $actualDate->translatedFormat('j F Y'),
+                        'status'    => $status,
+                        // Jika null, kirim null bulat-bulat agar Flutter menuliskannya 'N/A'
+                        'check_in'  => $checkInTime ? $checkInTime->format('H : i : s') : null,
+                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : null,
                     ];
                 });
 
