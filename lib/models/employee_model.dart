@@ -9,7 +9,6 @@ class EmployeeModel {
   final String? position;
   final String? phone;
   final String? address;
-  // --- Added this field ---
   final String? departmentName;
   final String? avatarUrl;
 
@@ -22,7 +21,7 @@ class EmployeeModel {
     this.position,
     this.phone,
     this.address,
-    this.departmentName, // Added to constructor
+    this.departmentName,
     this.avatarUrl,
   });
 

@@ -117,20 +117,29 @@ class LeaveController extends Controller
                 $position = $emp ? $emp->position : 'Staff Member';
                 $departmentName = $emp && $emp->department ? $emp->department->name : null;
 
+                // 👇 PERBAIKAN DI SINI: Ubah path lokal menjadi Full URL 👇
+                $rawAvatar = ($emp && $emp->user) ? $emp->user->avatar_url : null;
+
+                // Jika $rawAvatar ada isinya, gabungkan dengan asset('storage/...')
+                $avatarUrl = $rawAvatar ? asset('storage/' . $rawAvatar) : null;
+
                 return [
                     'id' => $leave->id,
                     'employee_name' => $fullName,
-                    'date_range' => Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . Carbon::parse($leave->end_date)->format('M d, Y'),
+                    'date_range' => \Carbon\Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . \Carbon\Carbon::parse($leave->end_date)->format('M d, Y'),
                     'start_date' => $leave->start_date,
                     'end_date' => $leave->end_date,
                     'leave_type' => $leave->leave_type,
                     'apply_days' => $leave->apply_days,
                     'reason' => $leave->reason,
-                    'avatar_url' => null,
+                    'avatar_url' => $avatarUrl,
                     'employee' => [
                         'full_name' => $fullName,
                         'position' => $position,
                         'department' => $departmentName,
+                        'user' => [
+                            'avatar_url' => $avatarUrl // Sekarang berisi http://domain.com/storage/avatars/...
+                        ]
                     ]
                 ];
             });

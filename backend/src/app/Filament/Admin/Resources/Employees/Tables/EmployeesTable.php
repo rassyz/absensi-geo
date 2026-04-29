@@ -16,18 +16,19 @@ class EmployeesTable
     {
         return $table
             ->columns([
+
+                TextColumn::make('full_name')
+                    ->label('Nama Lengkap')
+                    ->sortable()
+                    ->searchable(),
+
                 TextColumn::make('user.email')
-                    ->label('User')
+                    ->label('Email')
                     ->sortable()
                     ->searchable(),
 
                 TextColumn::make('department.name')
                     ->label('Departemen')
-                    ->sortable()
-                    ->searchable(),
-
-                TextColumn::make('full_name')
-                    ->label('Nama Lengkap')
                     ->sortable()
                     ->searchable(),
 

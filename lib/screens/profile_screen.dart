@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 
+import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
@@ -67,26 +68,29 @@ class ProfileScreen extends StatelessWidget {
     final authProvider = Provider.of<AuthProvider>(context);
     final employee = authProvider.user?.employee;
 
+    // 1. Ekstrak Nama
     final String userName =
         employee?.fullName ?? authProvider.user?.name ?? "Michael Mitc";
-    final String role = employee?.position ?? "Lead UI/UX Designer";
+
+    // 👇 2. LOGIKA DEPARTMENT - POSITION 👇
+    // Pastikan property 'department' dan 'position' sudah ada di model Employee Anda
+    final String dept = employee?.departmentName ?? "";
+    final String pos = employee?.position ?? "";
+
+    final String role = (dept.isNotEmpty && pos.isNotEmpty)
+        ? "$dept - $pos"
+        : (pos.isNotEmpty
+              ? pos
+              : (dept.isNotEmpty ? dept : "Lead UI/UX Designer"));
+    // 👆 SELESAI LOGIKA JABATAN 👆
 
     final String? avatarUrl = authProvider.user?.avatarUrl;
-    // print("URL AVATAR SAYA: $avatarUrl");
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        // leading: IconButton(
-        //   icon: const Icon(
-        //     Icons.arrow_back_ios_new,
-        //     size: 18,
-        //     color: Colors.black87,
-        //   ),
-        //   onPressed: () => Navigator.pop(context),
-        // ),
         title: const Text(
           'Profile',
           style: TextStyle(
@@ -110,19 +114,20 @@ class ProfileScreen extends StatelessWidget {
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.grey.shade200, width: 2),
+                    border: Border.all(
+                      color: AppColors.primary[500]!,
+                      width: 1.5,
+                    ),
                   ),
                   child: CircleAvatar(
                     radius: 45,
-                    backgroundColor: Colors.grey.shade300,
+                    backgroundColor: AppColors.gray[500],
 
-                    // 👇 DYNAMIC IMAGE LOGIC 👇
-                    // If the URL exists, load it. If not, this remains null.
+                    // DYNAMIC IMAGE LOGIC
                     backgroundImage: avatarUrl != null
                         ? NetworkImage(avatarUrl)
                         : null,
 
-                    // If the URL is null, show the Icon. If the URL exists, hide the Icon.
                     child: avatarUrl == null
                         ? const Icon(
                             Icons.person,

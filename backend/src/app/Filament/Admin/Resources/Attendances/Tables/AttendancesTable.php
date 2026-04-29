@@ -28,8 +28,11 @@ class AttendancesTable
                     ->label('Nama Karyawan')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('attendanceZone.name')
-                    ->label('Zona Absensi')
+                // TextColumn::make('attendanceZone.name')
+                //     ->label('Zona Absensi')
+                //     ->sortable(),
+                TextColumn::make('employee.department.name')
+                    ->label('Departemen')
                     ->sortable(),
                 TextColumn::make('date')
                     ->label('Tanggal')
@@ -37,12 +40,12 @@ class AttendancesTable
                     ->sortable()
                     ->searchable(),
                 TextColumn::make('check_in')
-                    ->label('Check-In')
+                    ->label('Absen Masuk')
                     ->dateTime('d M Y - H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
                 TextColumn::make('check_out')
-                    ->label('Check-Out')
+                    ->label('Absen Keluar')
                     ->dateTime('d M Y - H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),

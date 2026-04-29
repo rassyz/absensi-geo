@@ -505,12 +505,21 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
               ? leave['employee']['full_name']
               : (leave['employee_name'] ?? 'Unknown');
 
+          // 👇 AMBIL URL AVATAR DARI TABEL USER 👇
+          String? employeeAvatar;
+          if (leave['employee'] != null && leave['employee']['user'] != null) {
+            employeeAvatar = leave['employee']['user']['avatar_url'];
+          } else {
+            employeeAvatar =
+                leave['avatar_url']; // Fallback jika format API berbeda
+          }
+
           return _TeamLeaveItem(
             name: employeeName,
             dateRange:
                 leave['date_range'] ??
                 '${leave['start_date']} - ${leave['end_date']}',
-            imageUrl: leave['avatar_url'],
+            imageUrl: employeeAvatar,
             onReject: () => _processTeamLeave(leave['id'], 'Rejected'),
             onAccept: () => _processTeamLeave(leave['id'], 'Approved'),
             onTap: () => _showTeamLeaveDetails(leave),
@@ -556,6 +565,7 @@ class _PersonalLeaveDetailModal extends StatelessWidget {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.user;
     final employee = user?.employee;
+    final String? avatarUrl = user?.avatarUrl;
 
     // 1. Ambil Nama Lengkap
     final String userName =
@@ -602,11 +612,16 @@ class _PersonalLeaveDetailModal extends StatelessWidget {
                     CircleAvatar(
                       radius: 26,
                       backgroundColor: AppColors.primary[500],
-                      child: const Icon(
-                        Icons.person,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      backgroundImage: avatarUrl != null
+                          ? NetworkImage(avatarUrl)
+                          : null,
+                      child: avatarUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 28,
+                            )
+                          : null,
                     ),
                     const SizedBox(width: 16),
                     Column(
@@ -764,6 +779,13 @@ class _TeamLeaveDetailModal extends StatelessWidget {
         ? leave['employee']['full_name']
         : (leave['employee_name'] ?? 'Unknown Employee');
 
+    String? employeeAvatar;
+    if (leave['employee'] != null && leave['employee']['user'] != null) {
+      employeeAvatar = leave['employee']['user']['avatar_url'];
+    } else {
+      employeeAvatar = leave['avatar_url']; // Fallback
+    }
+
     // 👇 2. LOGIKA BARU: Merangkai Departemen - Posisi 👇
     String positionInfo = 'Staff Member';
     if (leave['employee'] != null) {
@@ -804,10 +826,10 @@ class _TeamLeaveDetailModal extends StatelessWidget {
                 CircleAvatar(
                   radius: 26,
                   backgroundColor: Colors.grey.shade300,
-                  backgroundImage: leave['avatar_url'] != null
-                      ? NetworkImage(leave['avatar_url'])
+                  backgroundImage: employeeAvatar != null
+                      ? NetworkImage(employeeAvatar)
                       : null,
-                  child: leave['avatar_url'] == null
+                  child: employeeAvatar == null
                       ? const Icon(Icons.person, color: Colors.white, size: 28)
                       : null,
                 ),

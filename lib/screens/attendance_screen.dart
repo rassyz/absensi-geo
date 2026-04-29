@@ -251,6 +251,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final employee = user?.employee;
     String displayPosition = "Employee";
 
+    final String? avatarUrl = user?.avatarUrl;
+
     if (employee != null) {
       if (employee.position != null && employee.departmentName != null) {
         displayPosition = "${employee.departmentName} - ${employee.position}";
@@ -338,6 +340,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 user?.token ?? '',
                 mainButtonText,
                 scrollController, // Lempar controllernya ke fungsi build kartu
+                avatarUrl,
               );
             },
           ),
@@ -451,13 +454,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String position,
     String token,
     String mainButtonText,
-    ScrollController scrollController, // <-- Menangkap Scroll Controller
+    ScrollController scrollController,
+    String? avatarUrl,
   ) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white[500],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        // Tambahkan bayangan (shadow) sedikit agar terlihat terpisah dari peta
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
@@ -507,6 +510,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   child: CircleAvatar(
                     radius: 20,
                     backgroundColor: AppColors.gray[500],
+                    backgroundImage: avatarUrl != null
+                        ? NetworkImage(avatarUrl)
+                        : null,
+                    child: avatarUrl == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 20,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 16),
