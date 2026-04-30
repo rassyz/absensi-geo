@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
+import 'package:absensi_geo/providers/leave_provider.dart'; // 👇 Import LeaveProvider
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/services/leave_service.dart';
-import 'package:absensi_geo/screens/home_screen.dart';
 import 'package:absensi_geo/screens/apply_leave_screen.dart';
 
 class LeaveRequestScreen extends StatefulWidget {
@@ -14,59 +15,18 @@ class LeaveRequestScreen extends StatefulWidget {
 }
 
 class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
-  bool _isLoading = true;
   int _activeTabIndex = 0;
-
-  Map<String, String> _summary = {
-    'balance': '0',
-    'approved': '0',
-    'pending': '0',
-    'cancelled': '0',
-  };
-
-  List<dynamic> _allLeaves = [];
-  List<dynamic> _teamLeaves = [];
-
   List<String> _selectedStatuses = [];
   final List<String> _statusOptions = ['Approved', 'Rejected', 'Pending'];
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchLeaveData();
-  }
-
-  Future<void> _fetchLeaveData() async {
-    setState(() => _isLoading = true);
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final token = authProvider.user?.token;
-
+  // Fungsi untuk me-refresh data secara manual (saat di-pull to refresh)
+  Future<void> _refreshData() async {
+    final token = Provider.of<AuthProvider>(context, listen: false).user?.token;
     if (token != null) {
-      final data = await LeaveService().getLeaveDashboard(token);
-
-      if (mounted && data != null && data['success'] == true) {
-        setState(() {
-          _summary = {
-            'balance': data['summary']['balance'].toString(),
-            'approved': data['summary']['approved'].toString(),
-            'pending': data['summary']['pending'].toString(),
-            'cancelled': data['summary']['cancelled'].toString(),
-          };
-          _allLeaves = data['leaves'] ?? [];
-          _teamLeaves = data['team_leaves'] ?? [];
-          _isLoading = false;
-        });
-      } else {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Gagal memuat data dari server.')),
-          );
-        }
-      }
-    } else {
-      setState(() => _isLoading = false);
+      await Provider.of<LeaveProvider>(
+        context,
+        listen: false,
+      ).fetchLeaveData(token, forceRefresh: true);
     }
   }
 
@@ -78,6 +38,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final leaveProvider = Provider.of<LeaveProvider>(context, listen: false);
     final token = authProvider.user?.token;
 
     if (token == null) {
@@ -92,12 +53,11 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
 
     if (!mounted) return;
-    Navigator.pop(context);
+    Navigator.pop(context); // Tutup loading dialog
 
     if (success) {
-      setState(() {
-        _teamLeaves.removeWhere((leave) => leave['id'] == leaveId);
-      });
+      // 👇 Hapus dari list di provider agar UI otomatis ter-update
+      leaveProvider.removeTeamLeave(leaveId);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -141,7 +101,6 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
   }
 
-  // 👇 FUNGSI BARU: Membuka Bottom Sheet Detail Cuti Pribadi 👇
   void _showPersonalLeaveDetails(dynamic leave) {
     showModalBottomSheet(
       context: context,
@@ -188,7 +147,6 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -209,7 +167,6 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
                   const Text(
                     "Status",
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
@@ -217,7 +174,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                   const SizedBox(height: 8),
                   ..._statusOptions.map((status) {
                     String displayLabel = status == 'Rejected'
-                        ? 'Unapproved'
+                        ? 'Rejected'
                         : status;
                     return Theme(
                       data: ThemeData(
@@ -248,9 +205,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
                       ),
                     );
                   }),
-
                   const SizedBox(height: 32),
-
                   Row(
                     children: [
                       Expanded(
@@ -314,17 +269,20 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
   }
 
-  List<dynamic> get _filteredLeaves {
+  // Fungsi untuk memfilter list berdasarkan state lokal dan data dari Provider
+  List<dynamic> _getFilteredLeaves(LeaveProvider provider) {
     List<dynamic> baseList;
 
     if (_activeTabIndex == 0) {
-      baseList = _allLeaves
+      baseList = provider.allLeaves
           .where((leave) => leave['is_past'] == false)
           .toList();
     } else if (_activeTabIndex == 1) {
-      baseList = _allLeaves.where((leave) => leave['is_past'] == true).toList();
+      baseList = provider.allLeaves
+          .where((leave) => leave['is_past'] == true)
+          .toList();
     } else {
-      baseList = _teamLeaves;
+      baseList = provider.teamLeaves;
     }
 
     if (_selectedStatuses.isEmpty) {
@@ -342,6 +300,9 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
   Widget build(BuildContext context) {
     bool isFilterActive = _selectedStatuses.isNotEmpty;
 
+    // 👇 Pantau perubahan pada LeaveProvider 👇
+    final leaveProvider = Provider.of<LeaveProvider>(context);
+
     return Scaffold(
       backgroundColor: AppColors.light[500],
       appBar: AppBar(
@@ -350,11 +311,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
         leading: Navigator.canPop(context)
             ? IconButton(
                 icon: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    shape: BoxShape.circle,
-                  ),
+                  padding: const EdgeInsets.all(5),
                   child: const Icon(
                     Icons.arrow_back_ios_new,
                     size: 16,
@@ -365,7 +322,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
               )
             : null,
         title: const Text(
-          'All Leaves',
+          'Data Cuti',
           style: TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: 20,
@@ -385,7 +342,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
               );
 
               if (shouldRefresh == true) {
-                _fetchLeaveData();
+                _refreshData();
               }
             },
           ),
@@ -418,16 +375,17 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
         padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
         child: Column(
           children: [
-            _buildSummary(),
+            _buildSummary(leaveProvider), // Lempar provider ke widget
             const SizedBox(height: 20),
             _buildTabs(),
             const SizedBox(height: 20),
             Expanded(
-              child: _isLoading
+              // Tampilkan loading HANYA JIKA belum ada data di memori
+              child: !leaveProvider.isLoaded && leaveProvider.isFetching
                   ? const Center(child: CircularProgressIndicator())
                   : RefreshIndicator(
-                      onRefresh: _fetchLeaveData,
-                      child: _buildList(),
+                      onRefresh: _refreshData,
+                      child: _buildList(leaveProvider),
                     ),
             ),
           ],
@@ -436,7 +394,7 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
   }
 
-  Widget _buildSummary() {
+  Widget _buildSummary(LeaveProvider provider) {
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -445,16 +403,28 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
       childAspectRatio: 1.8,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        _SummaryCard("Leave Balance", _summary['balance']!, Colors.blue),
-        _SummaryCard("Leave Approved", _summary['approved']!, Colors.green),
-        _SummaryCard("Leave Pending", _summary['pending']!, Colors.teal),
-        _SummaryCard("Leave Cancelled", _summary['cancelled']!, Colors.red),
+        _SummaryCard("Jumlah Cuti", provider.summary['balance']!, Colors.blue),
+        _SummaryCard(
+          "Cuti Disetujui",
+          provider.summary['approved']!,
+          Colors.green,
+        ),
+        _SummaryCard(
+          "Cuti Tertunda",
+          provider.summary['pending']!,
+          Colors.teal,
+        ),
+        _SummaryCard(
+          "Cuti Dibatalkan",
+          provider.summary['cancelled']!,
+          Colors.red,
+        ),
       ],
     );
   }
 
   Widget _buildTabs() {
-    final tabs = ["Upcoming", "Past", "Team Leave"];
+    final tabs = ["Akan Datang", "Lalu", "Cuti Tim"];
     return Row(
       children: List.generate(tabs.length, (index) {
         return Padding(
@@ -468,22 +438,21 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     );
   }
 
-  Widget _buildList() {
-    final leavesToShow = _filteredLeaves;
+  Widget _buildList(LeaveProvider provider) {
+    final leavesToShow = _getFilteredLeaves(provider);
 
     if (leavesToShow.isEmpty) {
       return CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverPadding(
-            // 👇 Tambahkan ruang di bawah untuk state kosong 👇
             padding: const EdgeInsets.only(bottom: 120),
             sliver: SliverFillRemaining(
               child: Center(
                 child: Text(
                   _activeTabIndex == 2
                       ? "Tidak ada pengajuan cuti dari tim Anda."
-                      : "Tidak ada data cuti yang sesuai filter.",
+                      : "Tidak ada data cuti yang ditemukan.",
                   style: const TextStyle(color: Colors.grey),
                 ),
               ),
@@ -505,13 +474,11 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
               ? leave['employee']['full_name']
               : (leave['employee_name'] ?? 'Unknown');
 
-          // 👇 AMBIL URL AVATAR DARI TABEL USER 👇
           String? employeeAvatar;
           if (leave['employee'] != null && leave['employee']['user'] != null) {
             employeeAvatar = leave['employee']['user']['avatar_url'];
           } else {
-            employeeAvatar =
-                leave['avatar_url']; // Fallback jika format API berbeda
+            employeeAvatar = leave['avatar_url'];
           }
 
           return _TeamLeaveItem(
@@ -675,23 +642,26 @@ class _PersonalLeaveDetailModal extends StatelessWidget {
             ),
 
             _buildDetailRow(
-              "Leave Type",
+              "Tipe Cuti",
               leave['leave_type'] ?? 'General Leave',
             ),
             const SizedBox(height: 16),
             _buildDetailRow(
-              "Date",
+              "Tanggal",
               leave['date_range'] ??
                   '${leave['start_date']} - ${leave['end_date']}',
             ),
             const SizedBox(height: 16),
-            _buildDetailRow("Apply Days", "${leave['apply_days'] ?? 0} Days"),
+            _buildDetailRow(
+              "Hari yang Diajukan",
+              "${leave['apply_days'] ?? 0} Hari",
+            ),
             const SizedBox(height: 16),
-            _buildDetailRow("Approved By", leave['approved_by'] ?? '--'),
+            _buildDetailRow("Diterima Oleh", leave['approved_by'] ?? '--'),
             const SizedBox(height: 16),
 
             Text(
-              "Reason",
+              "Alasan Cuti",
               style: TextStyle(color: AppColors.gray[500], fontSize: 12),
             ),
             const SizedBox(height: 6),
@@ -728,7 +698,7 @@ class _PersonalLeaveDetailModal extends StatelessWidget {
                   ),
                 ),
                 child: const Text(
-                  "Close",
+                  "Tutup",
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -862,21 +832,21 @@ class _TeamLeaveDetailModal extends StatelessWidget {
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Divider(),
             ),
-            _buildDetailRow(
-              "Leave Type",
-              leave['leave_type'] ?? 'Reguler Leave',
-            ),
+            _buildDetailRow("Tipe Cuti", leave['leave_type'] ?? 'Cuti Reguler'),
             const SizedBox(height: 16),
             _buildDetailRow(
-              "Date",
+              "Tanggal",
               leave['date_range'] ??
                   '${leave['start_date']} - ${leave['end_date']}',
             ),
             const SizedBox(height: 16),
-            _buildDetailRow("Apply Days", "${leave['apply_days'] ?? 0} Days"),
+            _buildDetailRow(
+              "Hari yang Diajukan",
+              "${leave['apply_days'] ?? 0} Hari",
+            ),
             const SizedBox(height: 16),
             Text(
-              "Reason",
+              "Alasan Cuti",
               style: TextStyle(color: AppColors.gray[500], fontSize: 12),
             ),
             const SizedBox(height: 6),
@@ -912,7 +882,7 @@ class _TeamLeaveDetailModal extends StatelessWidget {
                       ),
                     ),
                     child: const Text(
-                      "Reject Leave",
+                      "Tolak Cuti",
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -930,7 +900,7 @@ class _TeamLeaveDetailModal extends StatelessWidget {
                       ),
                     ),
                     child: const Text(
-                      "Approve Leave",
+                      "Setujui Cuti",
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -1055,7 +1025,7 @@ class _TeamLeaveItem extends StatelessWidget {
                           color: Colors.white,
                         ),
                         label: const Text(
-                          "Reject",
+                          "Tolak",
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -1081,7 +1051,7 @@ class _TeamLeaveItem extends StatelessWidget {
                           color: Colors.white,
                         ),
                         label: const Text(
-                          "Accept",
+                          "Setujui",
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,
@@ -1189,7 +1159,7 @@ class _LeaveItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color statusColor = Colors.green;
-    if (status.toLowerCase() == 'pending') statusColor = Colors.orange;
+    if (status.toLowerCase() == '') statusColor = Colors.orange;
     if (status.toLowerCase() == 'cancelled' ||
         status.toLowerCase() == 'rejected') {
       statusColor = Colors.red;
@@ -1247,9 +1217,9 @@ class _LeaveItem extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _info("Apply Days", days),
-                    _info("Leave Balance", balance),
-                    _info("Approved By", approvedBy),
+                    _info("Hari", days),
+                    _info("Sisa Cuti", balance),
+                    _info("Diterima Oleh", approvedBy),
                   ],
                 ),
               ],

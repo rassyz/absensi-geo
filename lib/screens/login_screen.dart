@@ -98,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // Welcome Text with Waving Hand and Blue highlight
               Text.rich(
                 TextSpan(
-                  text: 'Welcome Back ',
+                  text: 'Selamat datang kembali',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 24,
@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       text: '👋',
                       style: TextStyle(fontWeight: FontWeight.normal),
                     ),
-                    const TextSpan(text: '\nto '),
+                    const TextSpan(text: '\ndi '),
                     TextSpan(
                       text: 'Attendify',
                       style: TextStyle(color: AppColors.primarySwatch[500]),
@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Hello there, login to continue',
+                'Halo, silakan login untuk melanjutkan',
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
               const SizedBox(height: 30),
@@ -126,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // Email Form Field
               _buildAuthTextField(
                 controller: _emailController,
-                label: 'Email Address',
+                label: 'Email',
                 icon: Icons.email_outlined,
               ),
               const SizedBox(height: 16),
@@ -155,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: TextButton(
                   onPressed: () {},
                   child: Text(
-                    'Forgot Password ?',
+                    'Lupa Password ?',
                     style: TextStyle(color: AppColors.primarySwatch[500]),
                   ),
                 ),

@@ -261,11 +261,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
     }
 
-    String mainButtonText = "Check In";
+    String mainButtonText = "Absen Masuk";
     if (_hasCheckedIn && !_hasCheckedOut) {
-      mainButtonText = "Check Out";
+      mainButtonText = "Absen Keluar";
     } else if (_hasCheckedOut) {
-      mainButtonText = "Attendance Complete";
+      mainButtonText = "Presensi Selesai";
     }
 
     return Scaffold(
@@ -292,7 +292,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               )
             : null,
         title: Text(
-          'Clock In',
+          'Presensi',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -575,19 +575,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
             _buildTimelineItem(
               time: _checkInTime,
-              label: 'Clock In',
+              label: 'Absen Masuk',
               isCompleted: _hasCheckedIn,
               isLast: false,
-              buttonText: 'Clock In',
+              buttonText: 'Masuk',
               isButtonActive: !_hasCheckedIn,
             ),
 
             _buildTimelineItem(
               time: _checkOutTime,
-              label: 'Clock Out',
+              label: 'Absen Keluar',
               isCompleted: _hasCheckedOut,
               isLast: true,
-              buttonText: 'Clock Out',
+              buttonText: 'Keluar',
               isButtonActive: _hasCheckedIn && !_hasCheckedOut,
             ),
 

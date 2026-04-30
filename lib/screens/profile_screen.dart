@@ -1,5 +1,7 @@
 // lib/screens/profile_screen.dart
 
+import 'package:absensi_geo/providers/leave_provider.dart';
+import 'package:absensi_geo/providers/overtime_provider.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -20,14 +22,14 @@ class ProfileScreen extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(15),
           ),
-          title: const Text('Logout Confirmation'),
+          title: const Text('Konfirmasi Keluar'),
           content: const Text(
-            'Are you sure you want to log out? Your current session will be ended.',
+            'Apakah Anda yakin ingin keluar? Sesi Anda saat ini akan diakhiri.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
+              child: Text('Batal', style: TextStyle(color: Colors.grey[600])),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -41,6 +43,10 @@ class ProfileScreen extends StatelessWidget {
                 await authProvider.logout();
 
                 if (context.mounted) {
+                  // 👇 RESET MEMORI PROVIDER DI SINI 👇
+                  Provider.of<OvertimeProvider>(context, listen: false).reset();
+                  Provider.of<LeaveProvider>(context, listen: false).reset();
+
                   Navigator.pop(context); // Tutup loading
                   Navigator.pop(context); // Tutup dialog
 
@@ -52,7 +58,7 @@ class ProfileScreen extends StatelessWidget {
                 backgroundColor: const Color(0xFFFF766A),
               ),
               child: const Text(
-                'Logout',
+                'Keluar',
                 style: TextStyle(color: Colors.white),
               ),
             ),
@@ -92,7 +98,7 @@ class ProfileScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
         title: const Text(
-          'Profile',
+          'Profil',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -190,7 +196,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
                 child: const Text(
-                  'Edit Profile',
+                  'Edit Profil',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -204,25 +210,25 @@ class ProfileScreen extends StatelessWidget {
             // --- 4. LIST MENU ---
             _buildMenuItem(
               icon: Icons.person_outline,
-              title: 'My Profile',
+              title: 'Profil Saya',
               onTap: () {},
             ),
             const SizedBox(height: 12),
             _buildMenuItem(
               icon: Icons.settings_outlined,
-              title: 'Settings',
+              title: 'Pengaturan Akun',
               onTap: () {},
             ),
             const SizedBox(height: 12),
             _buildMenuItem(
               icon: Icons.description_outlined,
-              title: 'Terms & Conditions',
+              title: 'Syarat & Ketentuan',
               onTap: () {},
             ),
             const SizedBox(height: 12),
             _buildMenuItem(
               icon: Icons.verified_user_outlined,
-              title: 'Privacy Policy',
+              title: 'Kebijakan Privasi',
               onTap: () {},
             ),
             const SizedBox(height: 24),
@@ -230,7 +236,7 @@ class ProfileScreen extends StatelessWidget {
             // Menu Logout Spesial (Merah)
             _buildMenuItem(
               icon: Icons.logout,
-              title: 'Log out',
+              title: 'Keluar',
               isDestructive: true,
               onTap: () => _showLogoutDialog(context, authProvider),
             ),

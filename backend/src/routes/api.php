@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LeaveController;
+use App\Http\Controllers\Api\OvertimeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,4 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/leaves/dashboard', [LeaveController::class, 'getLeaveDashboard'])->name('api.leaves.dashboard');
     Route::post('/leaves/apply', [LeaveController::class, 'store'])->name('api.leaves.apply');
     Route::post('/leaves/{id}/process', [LeaveController::class, 'process'])->name('api.leaves.process');
+    Route::get('/overtimes', [OvertimeController::class, 'index'])->name('api.overtimes.index');
+    Route::post('/overtimes/clock-in', [OvertimeController::class, 'clockIn'])->name('api.overtimes.clockin');
+    Route::post('/overtimes/clock-out', [OvertimeController::class, 'clockOut'])->name('api.overtimes.clockout');
 });

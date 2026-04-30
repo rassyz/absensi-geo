@@ -32,18 +32,18 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
   int _lastUpdateCount = 0;
 
   final List<String> _months = [
-    'January',
-    'February',
-    'March',
+    'Januari',
+    'Februari',
+    'Maret',
     'April',
-    'May',
-    'June',
-    'July',
-    'August',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
     'September',
-    'October',
+    'Oktober',
     'November',
-    'December',
+    'Desember',
   ];
 
   @override
@@ -125,7 +125,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
               )
             : null, // Automatically hides the button if it's a Tab!
         title: Text(
-          'Attendance Report',
+          'Data Presensi',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -246,9 +246,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildStatCard('Present', _totalPresent, AppColors.primary[500]!),
-        _buildStatCard('Late', _totalLate, Colors.green[500]!),
-        _buildStatCard('Absent', _totalAbsent, Colors.red[500]!),
+        _buildStatCard('Hadir', _totalPresent, AppColors.primary[500]!),
+        _buildStatCard('Terlambat', _totalLate, Colors.green[500]!),
+        _buildStatCard('Tidak Hadir', _totalAbsent, Colors.red[500]!),
       ],
     );
   }
@@ -304,7 +304,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Attendance History',
+              'Riwayat Presensi',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -313,7 +313,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${_attendanceHistory.length} records',
+              '${_attendanceHistory.length} hari tercatat',
               style: TextStyle(color: AppColors.gray[500], fontSize: 12),
             ),
           ],
@@ -347,7 +347,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'Calendar',
+                  'Kalender',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: !_isListView
@@ -370,7 +370,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
         padding: const EdgeInsets.only(top: 40),
         child: Center(
           child: Text(
-            "No attendance records for this month.",
+            "Tidak ada catatan presensi untuk bulan ini.",
             style: TextStyle(color: AppColors.gray[500]),
           ),
         ),
@@ -461,7 +461,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                   Expanded(
                     flex: 2,
                     child: _buildTimeDisplay(
-                      'Clock In',
+                      'Masuk',
                       clockInDisplay,
                     ), // 👈 Gunakan variabel N/A
                   ),
@@ -473,7 +473,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                   Expanded(
                     flex: 2,
                     child: _buildTimeDisplay(
-                      'Clock Out',
+                      'Keluar',
                       clockOutDisplay,
                     ), // 👈 Gunakan variabel N/A
                   ),
@@ -507,13 +507,13 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     int emptyPrefix = firstWeekday == 7 ? 0 : firstWeekday;
 
     final List<String> weekdays = [
-      'Sun',
-      'Mon',
-      'Tue',
-      'Wed',
-      'Thu',
-      'Fri',
-      'Sat',
+      'Min',
+      'Sen',
+      'Sel',
+      'Rab',
+      'Kam',
+      'Jum',
+      'Sab',
     ];
 
     return Container(
@@ -641,9 +641,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
 
   String _getShortStatusText(String status) {
     String s = status.toLowerCase();
-    if (s.contains('hadir') || s.contains('reguler')) return 'Pre';
-    if (s.contains('telat') || s.contains('late')) return 'Late';
-    return 'Abse';
+    if (s.contains('hadir') || s.contains('reguler')) return 'Hadir';
+    if (s.contains('telat') || s.contains('late')) return 'Telat';
+    return 'Absen';
   }
 
   Color _getSemanticColor(String? status) {

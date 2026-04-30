@@ -1,6 +1,9 @@
 // lib/screens/home_screen.dart
 
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
+import 'package:absensi_geo/providers/leave_provider.dart';
+import 'package:absensi_geo/providers/overtime_provider.dart';
+import 'package:absensi_geo/screens/overtime_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
@@ -83,7 +86,7 @@ class AttendanceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mobile Presensi',
+      title: 'Presensi Mobile',
       theme: AppTheme.lightTheme(),
       home: const HomeScreen(),
     );
@@ -111,6 +114,23 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.user?.token;
+
+      if (token != null) {
+        Provider.of<OvertimeProvider>(
+          context,
+          listen: false,
+        ).fetchOvertimes(token);
+        Provider.of<LeaveProvider>(
+          context,
+          listen: false,
+        ).fetchLeaveData(token);
+      }
+    });
+
     _fetchHomeData();
   }
 
@@ -206,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildStatusGreeting(
                   context,
                   authProvider,
-                  user?.employee?.fullName ?? 'Guest',
+                  user?.employee?.fullName ?? 'Tamu',
                 ),
                 const SizedBox(height: 20),
                 _buildSearchFilterBar(),
@@ -305,7 +325,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: const TextField(
               decoration: InputDecoration(
-                hintText: 'Search...',
+                hintText: 'Cari...',
                 prefixIcon: Icon(Icons.search, color: Colors.grey),
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(
@@ -366,9 +386,9 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              Expanded(child: _buildClockCard('CLOCK IN', _clockInTime)),
+              Expanded(child: _buildClockCard('MASUK', _clockInTime)),
               const SizedBox(width: 16),
-              Expanded(child: _buildClockCard('CLOCK OUT', _clockOutTime)),
+              Expanded(child: _buildClockCard('KELUAR', _clockOutTime)),
             ],
           ),
         ],
@@ -417,9 +437,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatColumn('Your Absence', _totalAttendance),
-        _buildStatColumn('Late Clock In', _lateClockIn),
-        _buildStatColumn('No Clock In', _noClockIn),
+        _buildStatColumn('Hadir', _totalAttendance),
+        _buildStatColumn('Terlambat', _lateClockIn),
+        _buildStatColumn('Tidak Hadir', _noClockIn),
       ],
     );
   }
@@ -444,15 +464,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCategorySection(BuildContext context) {
     return Column(
       children: [
-        _buildHeaderRow('Category'),
+        _buildHeaderRow('Kategori'),
         const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             _buildCategoryCard(
-              'Leave',
+              'Cuti',
               Icons.access_time,
-              isSelected: true,
+              // isSelected: true,
               onTap: () {
                 Navigator.push(
                   context,
@@ -462,13 +482,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-            _buildCategoryCard('Overtime', Icons.history),
+            _buildCategoryCard(
+              'Lembur',
+              Icons.history,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const OvertimeScreen(),
+                  ),
+                );
+              },
+            ),
             _buildCategoryCard(
               'Timesheet',
               Icons.account_balance_wallet_outlined,
             ),
-            _buildCategoryCard('Calendar', Icons.calendar_today_outlined),
-            _buildCategoryCard('View All', Icons.add, isViewAll: true),
+            _buildCategoryCard('Kalender', Icons.calendar_today_outlined),
+            _buildCategoryCard('Semua', Icons.add, isViewAll: true),
           ],
         ),
         const SizedBox(height: 16),
@@ -555,7 +586,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
         _buildHeaderRow(
-          'Attendance Data',
+          'Data Presensi',
           onSeeAllTap: () {
             Navigator.push(
               context,
@@ -572,14 +603,14 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: EdgeInsets.symmetric(vertical: 20),
             child: Center(
               child: Text(
-                "No recent attendance data.",
+                "Belum ada data presensi terbaru.",
                 style: TextStyle(color: Colors.grey),
               ),
             ),
           ),
 
         ..._recentAttendances.map((record) {
-          String status = record['status'] ?? 'Unknown';
+          String status = record['status'] ?? 'Tidak Diketahui';
           Color statusColor = _getSemanticColor(status);
 
           // Mengambil dari database key: 'check_in', tapi memakai nama variabel frontend: 'rawClockIn'
@@ -721,7 +752,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
             child: Text(
-              'See All',
+              'Lihat Semua',
               style: TextStyle(
                 color: AppColors.primary[500],
                 fontSize: 13,
@@ -737,13 +768,13 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getGreeting() {
     final hour = DateTime.now().hour;
     if (hour >= 5 && hour < 12) {
-      return 'Good Morning';
+      return 'Selamat Pagi';
     } else if (hour >= 12 && hour < 17) {
-      return 'Good Afternoon';
+      return 'Selamat Siang';
     } else if (hour >= 17 && hour < 21) {
-      return 'Good Evening';
+      return 'Selamat Malam';
     } else {
-      return 'Good Night';
+      return 'Selamat Beristirahat';
     }
   }
 
@@ -796,7 +827,7 @@ class _LiveDateClockState extends State<LiveDateClock> {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Today, ${DateFormat('dd MMMM yyyy').format(_currentTime)}',
+      'Hari ini, ${DateFormat('dd MMMM yyyy').format(_currentTime)}',
       style: const TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.bold,

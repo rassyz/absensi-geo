@@ -4,14 +4,16 @@ import 'package:provider/provider.dart';
 
 // --- Providers ---
 import 'package:absensi_geo/providers/auth_provider.dart';
-import 'package:absensi_geo/providers/attendance_update_provider.dart'; // 👇 Import Provider Baru
+import 'package:absensi_geo/providers/attendance_update_provider.dart';
+import 'package:absensi_geo/providers/overtime_provider.dart';
+import 'package:absensi_geo/providers/leave_provider.dart';
 
 // --- Screens ---
 import 'package:absensi_geo/screens/splash_screen.dart';
 import 'package:absensi_geo/screens/login_screen.dart';
 import 'package:absensi_geo/screens/register_screen.dart';
 import 'package:absensi_geo/screens/home_screen.dart';
-import 'package:absensi_geo/screens/main_screen.dart'; // 👇 Import MainScreen (Navigasi Global)
+import 'package:absensi_geo/screens/main_screen.dart';
 
 // --- Services ---
 import 'package:absensi_geo/services/auth_service.dart';
@@ -23,11 +25,10 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
-        // 2. Pass the authService into the AuthProvider
         ChangeNotifierProvider(create: (_) => AuthProvider(authService)),
-
-        // 👇 3. DAFTARKAN PROVIDER UPDATE ABSENSI DI SINI 👇
         ChangeNotifierProvider(create: (_) => AttendanceUpdateProvider()),
+        ChangeNotifierProvider(create: (_) => OvertimeProvider()),
+        ChangeNotifierProvider(create: (_) => LeaveProvider()),
       ],
       child: const MyApp(),
     ),

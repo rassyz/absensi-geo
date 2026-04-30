@@ -42,4 +42,20 @@ class Employee extends Model
     {
         return $this->hasMany(EmployeeEvaluation::class);
     }
+
+    // Relasi Many-to-Many ke Jadwal Lembur
+    public function overtimes()
+    {
+        return $this->belongsToMany(Overtime::class, 'overtime_employees')
+                    ->withPivot([
+                        'id', 'status', 'check_in', 'check_in_latitude', 'check_in_longitude',
+                        'check_out', 'check_out_latitude', 'check_out_longitude'
+                    ])
+                    ->withTimestamps();
+    }
+
+    public function overtimeEmployees()
+    {
+        return $this->hasMany(OvertimeEmployee::class);
+    }
 }

@@ -75,4 +75,10 @@ final class User extends Authenticatable implements FilamentUser, HasAvatar
     {
         return $this->hasOne(Employee::class);
     }
+
+    // Relasi One-to-Many ke Jadwal Lembur yang dibuat (Admin)
+    public function overtimes()
+    {
+        return $this->hasMany(Overtime::class, 'admin_id');
+    }
 }

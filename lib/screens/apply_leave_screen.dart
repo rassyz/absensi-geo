@@ -25,12 +25,12 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   DateTime? _endDate = DateTime.now();
 
   // Dropdown State
-  String _selectedLeaveType = 'Medical Leave';
+  String _selectedLeaveType = 'Cuti Tahunan';
   final List<String> _leaveTypes = [
-    'Medical Leave',
-    'Annual Leave',
-    'Emergency Leave',
-    'Unpaid Leave',
+    'Cuti Sakit',
+    'Cuti Tahunan',
+    'Cuti Melahirkan',
+    'Cuti Alasan Penting',
   ];
 
   // Image Picker State
@@ -191,7 +191,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Leave applied successfully!'),
+          content: Text('Cuti diajukan berhasil!'),
           backgroundColor: Colors.green,
         ),
       );
@@ -199,7 +199,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to apply leave.'),
+          content: Text('Gagal mengajukan cuti.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -224,7 +224,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Apply Leave',
+          'Form Pengajuan Cuti',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -240,7 +240,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildDropdownField(
-                label: 'Leave Type',
+                label: 'Jenis Cuti',
                 value: _selectedLeaveType,
                 items: _leaveTypes,
                 onChanged: (String? newValue) {
@@ -255,7 +255,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                 children: [
                   Expanded(
                     child: _buildDateField(
-                      label: 'Start Date',
+                      label: 'Tanggal Mulai',
                       date: _startDate,
                       isStart: true,
                     ),
@@ -263,7 +263,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildDateField(
-                      label: 'End Date',
+                      label: 'Tanggal Selesai',
                       date: _endDate,
                       isStart: false,
                     ),
@@ -306,7 +306,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Total Days Requested:',
+            'Total Hari yang Diajukan:',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -314,7 +314,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
             ),
           ),
           Text(
-            '$_calculatedApplyDays Days',
+            '$_calculatedApplyDays Hari',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -445,7 +445,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Reason for Leave',
+              'Alasan Cuti',
               style: TextStyle(
                 fontSize: 12,
                 color: AppColors.primary[500],
@@ -460,7 +460,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
-                hintText: 'Enter your reason here...',
+                hintText: 'Masukkan alasan cuti Anda di sini...',
                 hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
               ),
               style: TextStyle(fontSize: 14, color: AppColors.dark[500]),
@@ -476,7 +476,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Attachment (Optional)',
+          'Lampiran Dokumen (Opsional)',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.bold,
@@ -509,7 +509,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Upload Doctor\'s Note or Document',
+                    'Upload Surat Dokter atau Dokumen Pendukung',
                     style: TextStyle(
                       color: AppColors.dark[500],
                       fontWeight: FontWeight.w500,
@@ -574,7 +574,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           elevation: 0,
         ),
         child: const Text(
-          'Apply Leave',
+          'Ajukan Cuti',
           style: TextStyle(
             color: Colors.white,
             fontSize: 16,
