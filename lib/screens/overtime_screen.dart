@@ -38,6 +38,7 @@ class OvertimeScreen extends StatelessWidget {
 
     // Mengambil posisi saat ini dengan akurasi tinggi (Penting untuk validasi PostGIS)
     return await Geolocator.getCurrentPosition(
+      // ignore: deprecated_member_use
       desiredAccuracy: LocationAccuracy.high,
     );
   }
@@ -75,11 +76,13 @@ class OvertimeScreen extends StatelessWidget {
       Position position = await _determinePosition();
 
       // 3. Ambil Token dari Provider
+      // ignore: use_build_context_synchronously
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final token = authProvider.user?.token;
 
-      if (token == null)
+      if (token == null) {
         throw Exception("Sesi telah habis, silakan login ulang.");
+      }
 
       // 4. Panggil API melalui OvertimeService
       final overtimeService = OvertimeService();

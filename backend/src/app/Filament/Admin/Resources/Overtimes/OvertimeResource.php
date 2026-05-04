@@ -18,9 +18,11 @@ class OvertimeResource extends Resource
 {
     protected static ?string $model = Overtime::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendar;
 
     protected static ?string $recordTitleAttribute = 'Overtime';
+
+    protected static string|\UnitEnum|null $navigationGroup = 'HR Management';
 
     public static function form(Schema $schema): Schema
     {

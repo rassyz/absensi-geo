@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendanceZone;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -487,5 +488,30 @@ class AttendanceController extends Controller
                 'message' => 'Gagal mengambil data laporan: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Get attendance records of a specific employee (for Heads to view their members).
+      * This method is protected by the EmployeeAttendancePolicy.
+    */
+    public function getMemberAttendances(Request $request, $employeeId)
+    {
+        $employeeToView = \App\Models\Employee::findOrFail($employeeId);
+        $authUserEmployee = $request->user()->employee;
+
+        if ($request->user()->cannot('viewMemberAttendances', $employeeToView)) {
+            // Kita keluarkan datanya untuk melihat apa yang tidak cocok
+            return response()->json([
+                'message' => 'Unauthorized',
+                'debug_info' => [
+                    'auth_posisi' => $authUserEmployee ? $authUserEmployee->position : 'NULL',
+                    'auth_dept' => $authUserEmployee ? $authUserEmployee->department_id : 'NULL',
+                    'target_dept' => $employeeToView->department_id,
+                ]
+            ], 403);
+        }
+
+        $attendances = $employeeToView->attendances()->orderBy('created_at', 'desc')->get();
+        return response()->json(['data' => $attendances]);
     }
 }

@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Providers\Filament;
 
+// use App\Filament\Admin\Pages\Dashboard;
 use App\Filament\Admin\Resources\Users\UserResource;
 use App\Filament\Admin\Widgets\LatestAccessLogs;
+use App\Filament\Widgets\DashboardStatsOverview;
 use App\Models\User;
 use Awcodes\LightSwitch\Enums\Alignment;
 use Awcodes\LightSwitch\LightSwitchPlugin;
 use Awcodes\Overlook\OverlookPlugin;
-use Awcodes\Overlook\Widgets\OverlookWidget;
+// use Awcodes\Overlook\Widgets\OverlookWidget;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Boquizo\FilamentLogViewer\FilamentLogViewerPlugin;
 use DiogoGPinto\AuthUIEnhancer\AuthUIEnhancerPlugin;
@@ -59,8 +61,9 @@ final class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Admin/Widgets'), for: 'App\Filament\Admin\Widgets')
             ->widgets([
-                OverlookWidget::class,
                 LatestAccessLogs::class,
+                DashboardStatsOverview::class,
+                // OverlookWidget::class,
             ])
             ->navigationGroups([
                 NavigationGroup::make()

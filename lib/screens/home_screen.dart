@@ -4,6 +4,7 @@ import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/providers/leave_provider.dart';
 import 'package:absensi_geo/providers/overtime_provider.dart';
 import 'package:absensi_geo/screens/overtime_screen.dart';
+import 'package:absensi_geo/screens/team_members_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
@@ -495,8 +496,16 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             _buildCategoryCard(
-              'Timesheet',
-              Icons.account_balance_wallet_outlined,
+              'Anggota Tim',
+              Icons.groups,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TeamMembersScreen(),
+                  ),
+                );
+              },
             ),
             _buildCategoryCard('Kalender', Icons.calendar_today_outlined),
             _buildCategoryCard('Semua', Icons.add, isViewAll: true),

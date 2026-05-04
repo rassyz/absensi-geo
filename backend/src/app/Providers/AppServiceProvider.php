@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Models\Employee;
 use App\Policies\ActivityPolicy;
+use App\Policies\EmployeeAttendancePolicy;
 use Filament\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -31,6 +33,7 @@ final class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Activity::class, ActivityPolicy::class);
+        Gate::policy(Employee::class, EmployeeAttendancePolicy::class);
         Page::formActionsAlignment(Alignment::Right);
         Notifications::alignment(Alignment::End);
         Notifications::verticalAlignment(VerticalAlignment::End);

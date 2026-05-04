@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot; // PERHATIKAN: Extend-nya paka
 
 class OvertimeEmployee extends Pivot
 {
-    protected $table = 'overtime_employee';
+    protected $table = 'overtime_employees';
     protected $guarded = ['id'];
 
     // Relasi ke Overtime

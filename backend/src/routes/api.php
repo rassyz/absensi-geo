@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\OvertimeController;
 use Illuminate\Http\Request;
@@ -35,4 +36,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/overtimes', [OvertimeController::class, 'index'])->name('api.overtimes.index');
     Route::post('/overtimes/clock-in', [OvertimeController::class, 'clockIn'])->name('api.overtimes.clockin');
     Route::post('/overtimes/clock-out', [OvertimeController::class, 'clockOut'])->name('api.overtimes.clockout');
+    Route::get('/team-members', [EmployeeController::class, 'getTeamMembers'])->name('api.team-members.index');
+    Route::get('/team-members/{id}/attendances', [AttendanceController::class, 'getMemberAttendances'])->name('api.team-members.attendances');
 });
