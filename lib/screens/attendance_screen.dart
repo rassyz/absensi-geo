@@ -71,7 +71,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     if (mounted) {
       setState(() {
-        _officeLocation ??= const LatLng(-6.200000, 106.816666);
+        _officeLocation ??= const LatLng(
+          -6.162709797692463,
+          106.64946673441781,
+        );
         _isLoadingMap = false;
       });
     }

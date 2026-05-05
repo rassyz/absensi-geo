@@ -1,7 +1,8 @@
 // lib/screens/team_members_screen.dart
 
 import 'package:flutter/material.dart';
-import '../services/employee_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/employee_provider.dart';
 import 'member_attendance_screen.dart';
 
 class TeamMembersScreen extends StatefulWidget {
@@ -13,17 +14,24 @@ class TeamMembersScreen extends StatefulWidget {
 }
 
 class _TeamMembersScreenState extends State<TeamMembersScreen> {
-  final EmployeeService _employeeService = EmployeeService();
-  late Future<List<Map<String, dynamic>>> _teamMembersFuture;
-
   @override
   void initState() {
     super.initState();
-    _teamMembersFuture = _employeeService.fetchTeamMembers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<EmployeeProvider>();
+      // 👇 PERBAIKAN: Hanya panggil API jika memori masih kosong!
+      if (provider.teamMembers.isEmpty) {
+        provider.fetchTeams();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    // 👇 Membaca data dari memori Provider (Tanpa FutureBuilder)
+    final employeeProvider = context.watch<EmployeeProvider>();
+    final members = employeeProvider.teamMembers;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -76,118 +84,111 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
             ),
           ),
           Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _teamMembersFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Terjadi kesalahan:\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.red),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(
+            // 👇 Logika Loading dari Provider
+            child: employeeProvider.isLoading && members.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : members.isEmpty
+                ? const Center(
                     child: Text(
                       'Tidak ada anggota tim yang ditemukan.',
                       style: TextStyle(color: Colors.grey),
                     ),
-                  );
-                }
+                  )
+                : RefreshIndicator(
+                    onRefresh: () => employeeProvider.fetchTeams(),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
+                      itemCount: members.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(color: Colors.grey[300]),
+                      itemBuilder: (context, index) {
+                        final employee = members[index];
 
-                final members = snapshot.data!;
-                return ListView.separated(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 8.0,
-                  ),
-                  itemCount: members.length,
-                  separatorBuilder: (context, index) =>
-                      Divider(color: Colors.grey[300]),
-                  itemBuilder: (context, index) {
-                    final employee = members[index];
-                    final String avatarUrl =
-                        employee['photo_url'] ??
-                        'https://ui-avatars.com/api/?name=${employee['full_name']}&background=random';
-                    final bool isHead = employee['position'] == 'Head';
+                        // Pastikan logika BaseApiService.baseUrl ada jika avatarUrl membutuhkannya
+                        final String avatarUrl =
+                            employee['photo_url'] ??
+                            'https://ui-avatars.com/api/?name=${employee['full_name']}&background=random';
+                        final bool isHead = employee['position'] == 'Head';
 
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        radius: 30,
-                        backgroundColor: Colors.grey[200],
-                        backgroundImage: NetworkImage(avatarUrl),
-                      ),
-                      title: Text(
-                        employee['full_name'] ?? 'Unknown',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              employee['phone'] ?? '-',
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isHead
-                                    ? Colors.blue[100]
-                                    : Colors.grey[200],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                employee['position'] ?? 'Staff',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isHead
-                                      ? Colors.blue[800]
-                                      : Colors.grey[800],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      trailing: const Icon(
-                        Icons.chevron_right,
-                        color: Colors.grey,
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => MemberAttendanceScreen(
-                              employeeId: employee['id'],
-                              employeeName: employee['full_name'],
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            radius: 30,
+                            backgroundColor: Colors.grey[200],
+                            backgroundImage: NetworkImage(avatarUrl),
+                          ),
+                          title: Text(
+                            employee['full_name'] ?? 'Unknown',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
                           ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  employee['phone'] ?? '-',
+                                  style: TextStyle(
+                                    color: Colors.grey[500],
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isHead
+                                        ? Colors.blue[100]
+                                        : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    employee['position'] ?? 'Staff',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isHead
+                                          ? Colors.blue[800]
+                                          : Colors.grey[800],
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right,
+                            color: Colors.grey,
+                          ),
+                          onTap: () {
+                            // 👇 Pre-fetch data attendance agar instan saat pindah layar
+                            context.read<EmployeeProvider>().fetchAttendances(
+                              employee['id'],
+                            );
+
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => MemberAttendanceScreen(
+                                  employeeId: employee['id'],
+                                  employeeName: employee['full_name'],
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
-                    );
-                  },
-                );
-              },
-            ),
+                    ),
+                  ),
           ),
         ],
       ),

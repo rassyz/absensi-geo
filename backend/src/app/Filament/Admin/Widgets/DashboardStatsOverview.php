@@ -38,7 +38,7 @@ class DashboardStatsOverview extends BaseWidget
                 ->chart([7, 2, 10, 3, 15, 4, 17]), // Grafik mini (sparkline) ilustrasi
 
             Stat::make('Sedang Lembur', $lemburAktif)
-                ->description('Karyawan di lokasi saat ini')
+                ->description('Karyawan lembur di lokasi saat ini')
                 ->descriptionIcon('heroicon-m-clock')
                 ->color('warning'),
 

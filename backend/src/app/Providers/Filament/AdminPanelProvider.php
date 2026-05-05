@@ -43,6 +43,8 @@ final class AdminPanelProvider extends PanelProvider
     public function panel(Panel $panel): Panel
     {
         return $panel
+            ->brandName('Attendify')
+            ->favicon(asset('img/logo-no-bg.png'))
             ->default()
             ->id('admin')
             ->path('admin')

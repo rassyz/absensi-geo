@@ -105,7 +105,7 @@ class AttendanceController extends Controller
                 $today = Carbon::today()->toDateString();
 
                 // status: hadir / telat
-                $status = $checkInTime->gt($workStart) ? 'telat' : 'hadir';
+                $status = $checkInTime->gt($workStart) ? 'Telat' : 'Hadir';
 
                 $attendance = Attendance::create([
                     'employee_id'           => $request->user()->employee->id,
@@ -191,7 +191,7 @@ class AttendanceController extends Controller
                     'check_out_latitude'    => $request->latitude,
                     'check_out_longitude'   => $request->longitude,
                     'check_out_photo_path'  => $photoPath,
-                    // 'status'                => 'hadir',
+                    // 'status'                => 'Hadir',
                 ]);
 
                 return response()->json([
@@ -254,9 +254,15 @@ class AttendanceController extends Controller
             throw new \Exception('Departemen Anda tidak memiliki zona absensi.');
         }
 
-        // 4. Buat Titik (POINT) PostGIS dari lokasi user
+        // 4. Validasi menggunakan ST_DWithin (Toleransi Hybrid Radius & Polygon)
+        // area::geography -> mengubah polygon menjadi hitungan meter
+        // ST_MakePoint diubah ke geography -> agar titik GPS juga dihitung dalam meter
+        // Angka 10 di belakang adalah radius toleransi dalam meter
         return AttendanceZone::whereIn('id', $validZoneIds)
-            ->whereRaw('ST_Contains(area, ST_SetSRID(ST_MakePoint(?, ?), 4326))', [$longitude, $latitude])
+            ->whereRaw(
+                'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 10)',
+                [$longitude, $latitude]
+            )
             ->exists();
     }
 
@@ -491,16 +497,16 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Get attendance records of a specific employee (for Heads to view their members).
-      * This method is protected by the EmployeeAttendancePolicy.
+        * Get attendance records of a specific employee (for Heads to view their members).
+        * This method is protected by the EmployeeAttendancePolicy.
     */
     public function getMemberAttendances(Request $request, $employeeId)
     {
         $employeeToView = \App\Models\Employee::findOrFail($employeeId);
         $authUserEmployee = $request->user()->employee;
 
+        // 1. Pengecekan Akses (Policy)
         if ($request->user()->cannot('viewMemberAttendances', $employeeToView)) {
-            // Kita keluarkan datanya untuk melihat apa yang tidak cocok
             return response()->json([
                 'message' => 'Unauthorized',
                 'debug_info' => [
@@ -511,7 +517,26 @@ class AttendanceController extends Controller
             ], 403);
         }
 
-        $attendances = $employeeToView->attendances()->orderBy('created_at', 'desc')->get();
+        // 2. Mulai menyusun Query
+        $query = $employeeToView->attendances();
+
+        // 3. Logika Filter
+        if ($request->has('month') && $request->has('year')) {
+            // JIKA ADA FILTER DARI FLUTTER: Ambil bulan & tahun spesifik
+            $query->whereMonth('date', $request->month)
+                  ->whereYear('date', $request->year);
+        } else {
+            // JIKA TIDAK ADA FILTER (INITIAL LOAD): Ambil 2 bulan terakhir
+            // subMonths(1)->startOfMonth() berarti mengambil dari awal bulan lalu sampai hari ini.
+            // Contoh: Jika sekarang bulan Mei, maka akan mengambil data dari 1 April sampai hari ini.
+            $twoMonthsAgo = \Carbon\Carbon::now()->subMonths(1)->startOfMonth();
+            $query->where('date', '>=', $twoMonthsAgo);
+        }
+
+        // 4. Eksekusi Query dan urutkan dari yang terbaru
+        // Disarankan menggunakan kolom 'date' dibanding 'created_at' untuk presensi
+        $attendances = $query->orderBy('date', 'desc')->get();
+
         return response()->json(['data' => $attendances]);
     }
 }

@@ -2,6 +2,7 @@
 
 import 'package:absensi_geo/providers/leave_provider.dart';
 import 'package:absensi_geo/providers/overtime_provider.dart';
+import 'package:absensi_geo/providers/employee_provider.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -46,6 +47,7 @@ class ProfileScreen extends StatelessWidget {
                   // 👇 RESET MEMORI PROVIDER DI SINI 👇
                   Provider.of<OvertimeProvider>(context, listen: false).reset();
                   Provider.of<LeaveProvider>(context, listen: false).reset();
+                  Provider.of<EmployeeProvider>(context, listen: false).reset();
 
                   Navigator.pop(context); // Tutup loading
                   Navigator.pop(context); // Tutup dialog

@@ -1,13 +1,13 @@
 // lib/screens/member_attendance_screen.dart
 
 import 'package:flutter/material.dart';
-import '../services/employee_service.dart';
+import 'package:provider/provider.dart';
+import '../providers/employee_provider.dart';
 
 class MemberAttendanceScreen extends StatefulWidget {
   final int employeeId;
   final String employeeName;
 
-  // 👇 Konstruktor murni tanpa token
   const MemberAttendanceScreen({
     super.key,
     required this.employeeId,
@@ -15,25 +15,142 @@ class MemberAttendanceScreen extends StatefulWidget {
   });
 
   @override
-  // ignore: library_private_types_in_public_api
-  _MemberAttendanceScreenState createState() => _MemberAttendanceScreenState();
+  State<MemberAttendanceScreen> createState() => _MemberAttendanceScreenState();
 }
 
 class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
-  final EmployeeService _employeeService = EmployeeService();
-  late Future<List<Map<String, dynamic>>> _memberAttendances;
+  // Secara default, set ke bulan dan tahun saat ini
+  int _selectedMonth = DateTime.now().month;
+  int _selectedYear = DateTime.now().year;
 
-  @override
-  void initState() {
-    super.initState();
-    // 👇 Panggil fungsi service secara langsung
-    _memberAttendances = _employeeService.fetchMemberAttendances(
-      employeeId: widget.employeeId,
+  // Fungsi untuk memunculkan modal filter
+  void _showFilterModal() {
+    // 👇 Daftar nama bulan dalam bahasa Indonesia
+    final List<String> monthNames = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Filter Presensi',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          decoration: InputDecoration(
+                            labelText: 'Bulan',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          initialValue: _selectedMonth,
+                          items: List.generate(12, (index) {
+                            return DropdownMenuItem(
+                              value: index + 1,
+                              // 👇 Menggunakan nama bulan dari list di atas
+                              child: Text(monthNames[index]),
+                            );
+                          }),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() => _selectedMonth = val);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          decoration: InputDecoration(
+                            labelText: 'Tahun',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          initialValue: _selectedYear,
+                          items: List.generate(3, (index) {
+                            int year = DateTime.now().year - 2 + index;
+                            return DropdownMenuItem(
+                              value: year,
+                              child: Text(year.toString()),
+                            );
+                          }),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() => _selectedYear = val);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        setState(() {});
+                        context.read<EmployeeProvider>().fetchAttendances(
+                          widget.employeeId,
+                          month: _selectedMonth,
+                          year: _selectedYear,
+                        );
+                      },
+                      child: const Text(
+                        'Terapkan Filter',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final employeeProvider = context.watch<EmployeeProvider>();
+    final attendances = employeeProvider.getAttendances(widget.employeeId);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -50,80 +167,56 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
         ),
         title: Text(
           widget.employeeName,
-          style: TextStyle(
+          style: const TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: 20,
             color: Colors.black87,
           ),
         ),
+        actions: [
+          // 👇 Tombol Filter menggunakan icon tune
+          IconButton(
+            icon: const Icon(Icons.tune, color: Colors.black87),
+            onPressed: _showFilterModal,
+          ),
+        ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _memberAttendances,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            final errorString = snapshot.error.toString();
-            if (errorString.contains("Unauthorized")) {
-              return _buildUnauthorizedView();
-            } else {
-              return Center(
-                child: Text("Gagal memuat data: ${snapshot.error}"),
-              );
-            }
-          }
-
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("Tidak ada data presensi."));
-          }
-
-          final attendances = snapshot.data!;
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: attendances.length,
-            itemBuilder: (context, index) {
-              final record = attendances[index];
-              return _AttendanceCard(record: record);
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildUnauthorizedView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.lock_outline_rounded, color: Colors.red[300], size: 80),
-            const SizedBox(height: 24),
-            const Text(
-              'Akses Dibatasi',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
+      // 👇 Gunakan indikator spesifik agar tidak terpengaruh loading halaman lain
+      body: employeeProvider.isLoadingAttendances
+          ? const Center(child: CircularProgressIndicator())
+          : attendances.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 60,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Tidak ada data untuk bulan $_selectedMonth/$_selectedYear.",
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: attendances.length,
+              itemBuilder: (context, index) {
+                final record = attendances[index];
+                return _AttendanceCard(record: record);
+              },
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Anda hanya dapat melihat data presensi untuk anggota tim Anda sendiri.',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
 
+// ==========================================
+// WIDGET BANTUAN TETAP SAMA SEPERTI MILIK ANDA
+// ==========================================
 class _AttendanceCard extends StatelessWidget {
   final Map<String, dynamic> record;
 
@@ -159,7 +252,7 @@ class _AttendanceCard extends StatelessWidget {
       final dt = DateTime.parse(timeString).toLocal();
       return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
     } catch (e) {
-      return timeString; // Tampilkan aslinya jika gagal parsing
+      return timeString;
     }
   }
 
@@ -185,7 +278,6 @@ class _AttendanceCard extends StatelessWidget {
               Container(
                 width: 8,
                 decoration: BoxDecoration(
-                  // 👇 Garis kiri berubah jadi abu-abu jika isInactive true
                   color: isInactive ? Colors.grey[300] : Colors.blue[400],
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(16),
@@ -217,7 +309,6 @@ class _AttendanceCard extends StatelessWidget {
                             child: _TimeBox(
                               icon: Icons.login,
                               time: _formatTime(record['check_in']),
-                              // 👇 Ikon dan teks jam juga ikut jadi abu-abu
                               iconColor: isInactive ? Colors.grey : Colors.blue,
                               timeColor: isInactive
                                   ? Colors.grey[500]
@@ -229,7 +320,6 @@ class _AttendanceCard extends StatelessWidget {
                             child: _TimeBox(
                               icon: Icons.logout,
                               time: _formatTime(record['check_out']),
-                              // 👇 Ikon dan teks jam juga ikut jadi abu-abu
                               iconColor: isInactive ? Colors.grey : Colors.blue,
                               timeColor: isInactive
                                   ? Colors.grey[500]
@@ -277,7 +367,6 @@ class _TimeBox extends StatelessWidget {
           child: Icon(icon, color: iconColor, size: 24),
         ),
         const SizedBox(width: 8),
-        // 👇 Gunakan Expanded dan TextOverflow
         Expanded(
           child: Text(
             time,
@@ -286,8 +375,7 @@ class _TimeBox extends StatelessWidget {
               color: timeColor,
               fontWeight: FontWeight.bold,
             ),
-            overflow: TextOverflow
-                .ellipsis, // Mencegah error overflow secara permanen
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

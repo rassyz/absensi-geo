@@ -23,6 +23,7 @@ class OvertimeController extends Controller
         }
 
         $overtimes = $user->employee->overtimes()
+            ->withPivot('status', 'check_in', 'check_out')
             ->orderBy('date', 'asc')
             ->get()
             ->map(function ($overtime) {
@@ -35,8 +36,12 @@ class OvertimeController extends Controller
                     'planned_end_time' => Carbon::parse($overtime->planned_end_time)->format('H:i'),
                     'notes' => $overtime->notes,
                     'status' => $overtime->pivot->status,
-                    'check_in' => $overtime->pivot->check_in,
-                    'check_out' => $overtime->pivot->check_out,
+                    'actual_check_in' => $overtime->pivot->check_in
+                        ? Carbon::parse($overtime->pivot->check_in)->format('H:i')
+                        : null,
+                    'actual_check_out' => $overtime->pivot->check_out
+                        ? Carbon::parse($overtime->pivot->check_out)->format('H:i')
+                        : null,
                 ];
             });
 
@@ -51,7 +56,7 @@ class OvertimeController extends Controller
      */
     public function clockIn(Request $request)
     {
-        // 1. Validasi Input (Foto dihapus)
+        // 1. Validasi Input
         $validator = Validator::make($request->all(), [
             'overtime_id' => 'required|exists:overtimes,id',
             'latitude'    => 'required|numeric|between:-90,90',
@@ -95,7 +100,7 @@ class OvertimeController extends Controller
                 return response()->json(['success' => false, 'message' => 'Anda sudah melakukan clock-in lembur.'], 400);
             }
 
-            // 5. Update pivot table (Tanpa menyimpan path foto)
+            // 5. Update pivot table
             $employee->overtimes()->updateExistingPivot($overtime->id, [
                 'check_in' => Carbon::now(),
                 'check_in_latitude' => $request->latitude,
@@ -121,7 +126,7 @@ class OvertimeController extends Controller
      */
     public function clockOut(Request $request)
     {
-        // 1. Validasi Input (Foto dihapus)
+        // 1. Validasi Input
         $validator = Validator::make($request->all(), [
             'overtime_id' => 'required|exists:overtimes,id',
             'latitude'    => 'required|numeric|between:-90,90',
@@ -166,7 +171,7 @@ class OvertimeController extends Controller
                 return response()->json(['success' => false, 'message' => 'Anda sudah melakukan clock-out lembur.'], 400);
             }
 
-            // 5. Update pivot table (Tanpa menyimpan path foto)
+            // 5. Update pivot table
             $employee->overtimes()->updateExistingPivot($overtime->id, [
                 'check_out' => Carbon::now(),
                 'check_out_latitude' => $request->latitude,
@@ -212,7 +217,10 @@ class OvertimeController extends Controller
 
         // Buat Titik (POINT) PostGIS dari lokasi user
         return AttendanceZone::whereIn('id', $validZoneIds)
-            ->whereRaw('ST_Contains(area, ST_SetSRID(ST_MakePoint(?, ?), 4326))', [$longitude, $latitude])
+            ->whereRaw(
+                'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 10)',
+                [$longitude, $latitude]
+            )
             ->exists();
     }
 }

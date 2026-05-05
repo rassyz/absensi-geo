@@ -14,6 +14,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Facades\Excel;
@@ -23,14 +24,12 @@ class AttendancesTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->defaultSort('date', 'desc')
             ->columns([
                 TextColumn::make('employee.full_name')
                     ->label('Nama Karyawan')
                     ->searchable()
                     ->sortable(),
-                // TextColumn::make('attendanceZone.name')
-                //     ->label('Zona Absensi')
-                //     ->sortable(),
                 TextColumn::make('employee.department.name')
                     ->label('Departemen')
                     ->sortable(),
@@ -74,6 +73,11 @@ class AttendancesTable
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('employee_id')
+                    ->relationship('employee', 'full_name')
+                    ->label('Nama Karyawan')
+                    ->searchable()
+                    ->preload(),
                 Filter::make('date')
                     ->label('Filter berdasarkan Tanggal')
                     ->form([
