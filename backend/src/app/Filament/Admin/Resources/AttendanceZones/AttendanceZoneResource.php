@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use App\Filament\Admin\Resources\AttendanceZones\Infolists\AttendanceZoneInfolist;
 
 class AttendanceZoneResource extends Resource
 {
@@ -50,5 +51,9 @@ class AttendanceZoneResource extends Resource
         ];
     }
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return AttendanceZoneInfolist::configure($schema);
+    }
 
 }

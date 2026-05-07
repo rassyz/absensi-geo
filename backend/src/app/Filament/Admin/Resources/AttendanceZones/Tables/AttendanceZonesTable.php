@@ -41,6 +41,7 @@ class AttendanceZonesTable
                 EditAction::make(),
                 DeleteAction::make(),
                 ViewAction::make(),
+                    // ->modalWidth('full'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
