@@ -163,6 +163,9 @@ class OvertimeScreen extends StatelessWidget {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
+          hoverColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+
           icon: const Icon(
             Icons.arrow_back_ios_new,
             size: 18,

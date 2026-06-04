@@ -276,7 +276,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.white[500],
         elevation: 0,
-        // Smart Back Button diaktifkan kembali
         leading: Navigator.canPop(context)
             ? IconButton(
                 icon: Container(
@@ -330,22 +329,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           // 2. Pemilih Tanggal melayang di atas peta
           Positioned(top: 16, left: 16, right: 16, child: _buildDateSelector()),
 
-          // 3. Kartu Bawah yang Bisa Digeser (Draggable Sheet)
-          DraggableScrollableSheet(
-            initialChildSize: 0.45, // Saat pertama buka, menutupi 45% layar
-            minChildSize:
-                0.25, // Bisa ditarik turun sampai 25% (hanya kelihatan foto profil & tombol)
-            maxChildSize: 0.70, // Bisa ditarik naik sampai 70% layar
-            builder: (BuildContext context, ScrollController scrollController) {
-              return _buildBottomCard(
-                user?.employee?.fullName ?? user?.name ?? 'Guest',
-                displayPosition,
-                user?.token ?? '',
-                mainButtonText,
-                scrollController, // Lempar controllernya ke fungsi build kartu
-                avatarUrl,
-              );
-            },
+          // 👇 3. Kartu Bawah yang Tetap (Fixed Position)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildBottomCard(
+              user?.employee?.fullName ?? user?.name ?? 'Guest',
+              displayPosition,
+              user?.token ?? '',
+              mainButtonText,
+              avatarUrl,
+            ),
           ),
         ],
       ),
@@ -457,10 +452,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String position,
     String token,
     String mainButtonText,
-    ScrollController scrollController,
     String? avatarUrl,
   ) {
     return Container(
+      // 👇 Pindahkan padding ke Container ini
+      padding: const EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 12,
+        bottom: 32, // Menjaga jarak dari Global Navbar
+      ),
       decoration: BoxDecoration(
         color: AppColors.white[500],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -472,158 +473,144 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
         ],
       ),
-      // Dibungkus dengan SingleChildScrollView yang menggunakan controller dari DraggableSheet
-      child: SingleChildScrollView(
-        controller: scrollController,
-        // Padding bawah tetap 110px agar tidak menabrak Navigasi Kapsul Global
-        padding: const EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 12,
-          bottom: 110,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // --- DRAG HANDLE (Pill abu-abu kecil di atas kartu) ---
-            Center(
-              child: Container(
-                width: 40,
-                height: 5,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(10),
-                ),
+      // 👇 SingleChildScrollView dihapus agar fix dan tidak bisa discroll
+      child: Column(
+        mainAxisSize: MainAxisSize.min, // Menyesuaikan tinggi dengan isi konten
+        children: [
+          // --- DRAG HANDLE (Dipertahankan untuk estetika UI sesuai permintaan) ---
+          Center(
+            child: Container(
+              width: 40,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(10),
               ),
             ),
+          ),
 
-            // --- KONTEN KARTU ABSENSI ---
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.primary[500]!,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: 20,
-                    backgroundColor: AppColors.gray[500],
-                    backgroundImage: avatarUrl != null
-                        ? NetworkImage(avatarUrl)
-                        : null,
-                    child: avatarUrl == null
-                        ? const Icon(
-                            Icons.person,
-                            size: 20,
-                            color: Colors.white,
-                          )
-                        : null,
+          // --- KONTEN KARTU ABSENSI ---
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primary[500]!,
+                    width: 1.5,
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        userName,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: AppColors.dark[500],
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        position,
-                        style: TextStyle(
-                          color: AppColors.gray[500],
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.gray[500],
+                  backgroundImage: avatarUrl != null
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: avatarUrl == null
+                      ? const Icon(Icons.person, size: 20, color: Colors.white)
+                      : null,
                 ),
-                if (_hasCheckedIn)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.secondary[500],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'Active',
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userName,
                       style: TextStyle(
-                        color: AppColors.white[500],
                         fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppColors.dark[500],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      position,
+                      style: TextStyle(
+                        color: AppColors.gray[500],
                         fontSize: 12,
                       ),
                     ),
-                  ),
-              ],
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
-            ),
-
-            _buildTimelineItem(
-              time: _checkInTime,
-              label: 'Absen Masuk',
-              isCompleted: _hasCheckedIn,
-              isLast: false,
-              buttonText: 'Masuk',
-              isButtonActive: !_hasCheckedIn,
-            ),
-
-            _buildTimelineItem(
-              time: _checkOutTime,
-              label: 'Absen Keluar',
-              isCompleted: _hasCheckedOut,
-              isLast: true,
-              buttonText: 'Keluar',
-              isButtonActive: _hasCheckedIn && !_hasCheckedOut,
-            ),
-
-            const SizedBox(height: 24),
-
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _hasCheckedOut
-                    ? null
-                    : () => _processAttendance(token),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _hasCheckedOut
-                      ? AppColors.gray[500]
-                      : AppColors.primary[500],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  elevation: 0,
+                  ],
                 ),
-                child: Text(
-                  mainButtonText,
-                  style: TextStyle(
-                    color: AppColors.white[500],
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+              ),
+              if (_hasCheckedIn)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
                   ),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary[500],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'Active',
+                    style: TextStyle(
+                      color: AppColors.white[500],
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
+          ),
+
+          _buildTimelineItem(
+            time: _checkInTime,
+            label: 'Absen Masuk',
+            isCompleted: _hasCheckedIn,
+            isLast: false,
+            buttonText: 'Masuk',
+            isButtonActive: !_hasCheckedIn,
+          ),
+
+          _buildTimelineItem(
+            time: _checkOutTime,
+            label: 'Absen Keluar',
+            isCompleted: _hasCheckedOut,
+            isLast: true,
+            buttonText: 'Keluar',
+            isButtonActive: _hasCheckedIn && !_hasCheckedOut,
+          ),
+
+          const SizedBox(height: 24),
+
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _hasCheckedOut
+                  ? null
+                  : () => _processAttendance(token),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _hasCheckedOut
+                    ? AppColors.gray[500]
+                    : AppColors.primary[500],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: Text(
+                mainButtonText,
+                style: TextStyle(
+                  color: AppColors.white[500],
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

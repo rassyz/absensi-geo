@@ -1,0 +1,142 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- PIN OUTLINE -->
+  <path
+    d="M256 472C256 472 404 322 404 206C404 122 336 54 256 54C176 54 108 122 108 206C108 322 256 472 256 472Z"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- OUTER FINGERPRINT -->
+  <path
+    d="M150 206C150 120 208 78 256 78C304 78 362 120 362 206"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M184 226C184 156 224 118 256 118C288 118 328 156 328 226"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M216 246C216 194 240 166 256 166C272 166 296 194 296 246"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- LEFT UPPER -->
+  <path
+    d="M126 214V252"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M154 180C138 200 130 222 130 248"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- LEFT LOWER -->
+  <path
+    d="M160 254C160 320 184 370 224 410"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M194 268C194 322 212 360 240 392"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M226 280C226 318 238 346 256 370"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- CENTER -->
+  <path
+    d="M256 180V302"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- RIGHT UPPER -->
+  <path
+    d="M386 214V252"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M358 180C374 200 382 222 382 248"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- RIGHT LOWER -->
+  <path
+    d="M352 254C352 320 328 370 288 410"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M318 268C318 322 300 360 272 392"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <path
+    d="M286 280C286 318 274 346 256 370"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+  />
+
+  <!-- LOWER INNER -->
+  <path
+    d="M238 344L256 362L274 344"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <path
+    d="M228 388L256 410L284 388"
+    stroke="white"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- BOTTOM CIRCLE -->
+  <circle
+    cx="256"
+    cy="386"
+    r="18"
+    stroke="white"
+    stroke-width="14"
+  />
+
+</svg>

@@ -310,6 +310,9 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
         elevation: 0,
         leading: Navigator.canPop(context)
             ? IconButton(
+                hoverColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+
                 icon: Container(
                   padding: const EdgeInsets.all(5),
                   child: const Icon(
@@ -396,6 +399,8 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
 
   Widget _buildSummary(LeaveProvider provider) {
     return GridView.count(
+      padding: EdgeInsets.zero,
+
       crossAxisCount: 2,
       shrinkWrap: true,
       crossAxisSpacing: 12,
@@ -427,11 +432,14 @@ class _LeaveRequestScreenState extends State<LeaveRequestScreen> {
     final tabs = ["Akan Datang", "Lalu", "Cuti Tim"];
     return Row(
       children: List.generate(tabs.length, (index) {
-        return Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: GestureDetector(
-            onTap: () => setState(() => _activeTabIndex = index),
-            child: _TabItem(tabs[index], _activeTabIndex == index),
+        return Expanded(
+          child: Padding(
+            // Memberikan jarak antar tombol, tapi tidak di tombol paling kanan
+            padding: EdgeInsets.only(right: index == tabs.length - 1 ? 0 : 10),
+            child: GestureDetector(
+              onTap: () => setState(() => _activeTabIndex = index),
+              child: _TabItem(tabs[index], _activeTabIndex == index),
+            ),
           ),
         );
       }),
@@ -1122,16 +1130,22 @@ class _TabItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      // 👇 Tambahkan alignment center agar teks berada persis di tengah tombol
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(
+        vertical: 12,
+      ), // Padding horizontal dihapus karena sudah diatur Expanded
       decoration: BoxDecoration(
         color: active ? AppColors.primary[500] : Colors.grey[200],
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         text,
+        textAlign: TextAlign.center, // Memastikan teks rata tengah
         style: TextStyle(
-          color: active ? Colors.white : Colors.black,
-          fontWeight: FontWeight.w500,
+          color: active ? Colors.white : Colors.black87,
+          fontWeight: FontWeight.w600, // Sedikit ditebalkan agar lebih jelas
+          fontSize: 13, // Disesuaikan agar tidak terpotong di layar kecil
         ),
       ),
     );

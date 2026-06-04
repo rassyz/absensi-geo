@@ -1,7 +1,6 @@
 import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/screens/main_screen.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -69,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final authProvider = Provider.of<AuthProvider>(context);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: AppColors.light[500],
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
@@ -77,19 +76,15 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Custom App Logo
-              Center(
-                child: Container(
-                  width: 130,
-                  height: 130,
-                  padding: const EdgeInsets.all(
-                    10,
-                  ), // Adjust this padding if the logo feels too tight
-                  child: Center(
-                    child: Image.asset(
-                      'assets/img/logo-no-bg.png',
-                      fit: BoxFit
-                          .contain, // Ensures the logo fits perfectly inside the circle
-                    ),
+              Container(
+                width: 130,
+                height: 130,
+                padding: const EdgeInsets.all(5),
+                child: Center(
+                  child: Image.asset(
+                    'assets/img/logo-no-bg.png',
+                    fit: BoxFit
+                        .contain, // Ensures the logo fits perfectly inside the circle
                   ),
                 ),
               ),
@@ -200,80 +195,80 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 30),
 
               // Social Account Divider
-              Row(
-                children: [
-                  Expanded(child: Divider(color: AppColors.gray20)),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(
-                      'Or continue with social account',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ),
-                  Expanded(child: Divider(color: AppColors.gray20)),
-                ],
-              ),
-              const SizedBox(height: 20),
+              // Row(
+              //   children: [
+              //     Expanded(child: Divider(color: AppColors.gray20)),
+              //     const Padding(
+              //       padding: EdgeInsets.symmetric(horizontal: 16.0),
+              //       child: Text(
+              //         'Or continue with social account',
+              //         style: TextStyle(color: Colors.grey, fontSize: 12),
+              //       ),
+              //     ),
+              //     Expanded(child: Divider(color: AppColors.gray20)),
+              //   ],
+              // ),
+              // const SizedBox(height: 20),
 
               // White Google Social Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: OutlinedButton(
-                  onPressed: () {},
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: BorderSide(color: AppColors.gray20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.android, color: Colors.green),
-                      SizedBox(width: 12),
-                      Text(
-                        'Google',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
+              // SizedBox(
+              //   width: double.infinity,
+              //   height: 56,
+              //   child: OutlinedButton(
+              //     onPressed: () {},
+              //     style: OutlinedButton.styleFrom(
+              //       backgroundColor: Colors.white,
+              //       side: BorderSide(color: AppColors.gray20),
+              //       shape: RoundedRectangleBorder(
+              //         borderRadius: BorderRadius.circular(12),
+              //       ),
+              //     ),
+              //     child: Row(
+              //       mainAxisAlignment: MainAxisAlignment.center,
+              //       children: const [
+              //         Icon(Icons.android, color: Colors.green),
+              //         SizedBox(width: 12),
+              //         Text(
+              //           'Google',
+              //           style: TextStyle(
+              //             fontWeight: FontWeight.bold,
+              //             fontSize: 16,
+              //             color: Colors.black87,
+              //           ),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ),
+              // const SizedBox(height: 30),
 
               // Footer Register Link (Native Navigation)
-              Center(
-                child: Text.rich(
-                  TextSpan(
-                    text: 'Didn’t have an account? ',
-                    style: const TextStyle(color: Colors.grey),
-                    children: [
-                      TextSpan(
-                        text: 'Register',
-                        style: TextStyle(
-                          color: AppColors.primarySwatch[500],
-                          fontWeight: FontWeight.bold,
-                        ),
-                        recognizer: TapGestureRecognizer()
-                          ..onTap = () {
-                            // Native Flutter Push Replacement
-                            Navigator.pushReplacementNamed(
-                              context,
-                              '/register',
-                            );
-                          },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
+              // Center(
+              //   child: Text.rich(
+              //     TextSpan(
+              //       text: 'Belum punya akun? ',
+              //       style: const TextStyle(color: Colors.grey),
+              //       children: [
+              //         TextSpan(
+              //           text: 'Daftar sekarang',
+              //           style: TextStyle(
+              //             color: AppColors.primarySwatch[500],
+              //             fontWeight: FontWeight.bold,
+              //           ),
+              //           recognizer: TapGestureRecognizer()
+              //             ..onTap = () {
+              //               // Native Flutter Push Replacement
+              //               Navigator.pushReplacementNamed(
+              //                 context,
+              //                 '/register',
+              //               );
+              //             },
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ),
+              // const SizedBox(height: 30),
             ],
           ),
         ),

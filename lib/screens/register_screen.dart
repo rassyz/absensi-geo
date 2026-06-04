@@ -68,7 +68,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final authProvider = Provider.of<AuthProvider>(context);
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: AppColors.light[500],
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
@@ -97,19 +97,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 30),
 
               // Custom App Logo
-              Center(
-                child: Container(
-                  width: 130,
-                  height: 130,
-                  padding: const EdgeInsets.all(
-                    10,
-                  ), // Adjust this padding if the logo feels too tight
-                  child: Center(
-                    child: Image.asset(
-                      'assets/img/logo-no-bg.png',
-                      fit: BoxFit
-                          .contain, // Ensures the logo fits perfectly inside the circle
-                    ),
+              Container(
+                width: 130,
+                height: 130,
+                padding: const EdgeInsets.all(
+                  5,
+                ), // Adjust this padding if the logo feels too tight
+                child: Center(
+                  child: Image.asset(
+                    'assets/img/logo-no-bg.png',
+                    fit: BoxFit
+                        .contain, // Ensures the logo fits perfectly inside the circle
                   ),
                 ),
               ),
@@ -118,7 +116,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               // Register Text
               Text.rich(
                 TextSpan(
-                  text: 'Register Account ',
+                  text: 'Daftar Akun ',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 24,
@@ -128,7 +126,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       text: '👋',
                       style: TextStyle(fontWeight: FontWeight.normal),
                     ),
-                    const TextSpan(text: '\nto '),
+                    const TextSpan(text: '\n'),
                     TextSpan(
                       text: 'Attendify',
                       style: TextStyle(color: AppColors.primarySwatch[500]),
@@ -138,7 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Hello there, register to continue',
+                'Halo, daftar untuk melanjutkan',
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
               const SizedBox(height: 30),
@@ -146,22 +144,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
               // Registration Fields
               _buildAuthTextField(
                 controller: _firstNameController,
-                label: 'First Name',
-                hint: 'Enter First Name',
+                label: 'Nama Depan',
+                hint: 'Masukkan Nama Depan',
                 icon: Icons.person_outline,
               ),
               const SizedBox(height: 16),
               _buildAuthTextField(
                 controller: _lastNameController,
-                label: 'Last Name',
-                hint: 'Enter Last Name',
+                label: 'Nama Belakang',
+                hint: 'Masukkan Nama Belakang',
                 icon: Icons.person_outline,
               ),
               const SizedBox(height: 16),
               _buildAuthTextField(
                 controller: _emailController,
-                label: 'Email Address',
-                hint: 'Enter Email Address',
+                label: 'Alamat Email',
+                hint: 'Masukkan Alamat Email',
                 icon: Icons.email_outlined,
               ),
               const SizedBox(height: 16),
@@ -169,7 +167,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _buildAuthTextField(
                 controller: _passwordController,
                 label: 'Password',
-                hint: 'Enter Password',
+                hint: 'Masukkan Password',
                 icon: Icons.lock_outline,
                 obscureText: authProvider.obscurePassword,
                 suffixIcon: IconButton(
@@ -186,8 +184,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               // Confirm Password Field
               _buildAuthTextField(
                 controller: _confirmPasswordController,
-                label: 'Confirm Password',
-                hint: 'Confirm Password',
+                label: 'Konfirmasi Password',
+                hint: 'Konfirmasi Password',
                 icon: Icons.lock_outline,
                 obscureText: authProvider.obscureConfirmPassword,
                 suffixIcon: IconButton(
@@ -215,20 +213,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Expanded(
                     child: Text.rich(
                       TextSpan(
-                        text: 'I agree to the ',
+                        text: 'Saya setuju dengan ',
                         style: const TextStyle(
                           color: Colors.grey,
                           fontSize: 13,
                         ),
                         children: [
                           TextSpan(
-                            text: 'Terms & Conditions & Privacy Policy',
+                            text: 'syarat dan ketentuan',
                             style: TextStyle(
                               color: AppColors.primarySwatch[500],
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const TextSpan(text: ' set out by this site.'),
+                          const TextSpan(text: ' yang berlaku.'),
                         ],
                       ),
                     ),
@@ -276,58 +274,58 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 30),
 
               // Social Account Divider
-              Row(
-                children: [
-                  Expanded(child: Divider(color: AppColors.gray20)),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Text(
-                      'Or continue with social account',
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ),
-                  Expanded(child: Divider(color: AppColors.gray20)),
-                ],
-              ),
-              const SizedBox(height: 20),
+              // Row(
+              //   children: [
+              //     Expanded(child: Divider(color: AppColors.gray20)),
+              //     const Padding(
+              //       padding: EdgeInsets.symmetric(horizontal: 16.0),
+              //       child: Text(
+              //         'Or continue with social account',
+              //         style: TextStyle(color: Colors.grey, fontSize: 12),
+              //       ),
+              //     ),
+              //     Expanded(child: Divider(color: AppColors.gray20)),
+              //   ],
+              // ),
+              // const SizedBox(height: 20),
 
-              // White Google Social Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: OutlinedButton(
-                  onPressed: () {},
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    side: BorderSide(color: AppColors.gray20),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.android, color: Colors.green),
-                      SizedBox(width: 12),
-                      Text(
-                        'Google',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
+              // // White Google Social Button
+              // SizedBox(
+              //   width: double.infinity,
+              //   height: 56,
+              //   child: OutlinedButton(
+              //     onPressed: () {},
+              //     style: OutlinedButton.styleFrom(
+              //       backgroundColor: Colors.white,
+              //       side: BorderSide(color: AppColors.gray20),
+              //       shape: RoundedRectangleBorder(
+              //         borderRadius: BorderRadius.circular(12),
+              //       ),
+              //     ),
+              //     child: Row(
+              //       mainAxisAlignment: MainAxisAlignment.center,
+              //       children: const [
+              //         Icon(Icons.android, color: Colors.green),
+              //         SizedBox(width: 12),
+              //         Text(
+              //           'Google',
+              //           style: TextStyle(
+              //             fontWeight: FontWeight.bold,
+              //             fontSize: 16,
+              //             color: Colors.black87,
+              //           ),
+              //         ),
+              //       ],
+              //     ),
+              //   ),
+              // ),
+              // const SizedBox(height: 30),
 
               // Footer Login Link
               Center(
                 child: Text.rich(
                   TextSpan(
-                    text: 'Already have an account? ',
+                    text: 'Sudah punya akun? ',
                     style: const TextStyle(color: Colors.grey),
                     children: [
                       TextSpan(

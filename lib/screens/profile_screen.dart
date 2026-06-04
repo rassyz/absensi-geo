@@ -87,9 +87,7 @@ class ProfileScreen extends StatelessWidget {
 
     final String role = (dept.isNotEmpty && pos.isNotEmpty)
         ? "$dept - $pos"
-        : (pos.isNotEmpty
-              ? pos
-              : (dept.isNotEmpty ? dept : "Lead UI/UX Designer"));
+        : (pos.isNotEmpty ? pos : (dept.isNotEmpty ? dept : "Tidak Diketahui"));
     // 👆 SELESAI LOGIKA JABATAN 👆
 
     final String? avatarUrl = authProvider.user?.avatarUrl;

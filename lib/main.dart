@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-// import 'dart:io';
+
+import 'package:intl/date_symbol_data_local.dart';
 
 // --- Providers ---
 import 'package:absensi_geo/providers/auth_provider.dart';
@@ -19,8 +20,10 @@ import 'package:absensi_geo/screens/main_screen.dart';
 // --- Services ---
 import 'package:absensi_geo/services/auth_service.dart';
 
-void main() {
-  // 1. Initialize your new AuthService instead of ApiService
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('id_ID', null);
+
   final authService = AuthService();
 
   runApp(
@@ -45,6 +48,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Attendify',
       debugShowCheckedModeBanner: false,
+
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashScreen(),

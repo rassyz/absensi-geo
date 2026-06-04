@@ -1,98 +1,23 @@
 // lib/screens/home_screen.dart
 
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'dart:async';
+
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/providers/leave_provider.dart';
 import 'package:absensi_geo/providers/overtime_provider.dart';
+import 'package:absensi_geo/providers/auth_provider.dart';
+
 import 'package:absensi_geo/screens/overtime_screen.dart';
 import 'package:absensi_geo/screens/team_members_screen.dart';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:absensi_geo/providers/auth_provider.dart';
-import 'package:absensi_geo/services/attendance_service.dart';
-import 'package:intl/intl.dart';
-import 'dart:async';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
 import 'package:absensi_geo/screens/leave_request_screen.dart';
 import 'package:absensi_geo/screens/profile_screen.dart';
 
-// --- Inline Color/Theme Definitions ---
-class AppColors {
-  AppColors._();
-
-  static const Map<int, Color> primary = {
-    500: Color(0xFF2979FF),
-    700: Color(0xFF1976D2),
-  };
-
-  static final MaterialColor primarySwatch = MaterialColor(
-    primary[500]!.toARGB32(),
-    primary,
-  );
-
-  static const Map<int, Color> secondary = {500: Color(0xFFA4CD39)};
-
-  static final MaterialColor secondarySwatch = MaterialColor(
-    secondary[500]!.toARGB32(),
-    secondary,
-  );
-
-  static const Map<int, Color> dark = {500: Color(0xFF000000)};
-  static const Map<int, Color> gray = {500: Color(0xFFA1A1A1)};
-  static const Map<int, Color> light = {500: Color(0xFFF0F0F0)};
-  static const Map<int, Color> white = {500: Color(0xFFFFFFFF)};
-
-  static Color get dark05 => dark[500]!.withValues(alpha: 0.05);
-
-  static const LinearGradient gradient2 = LinearGradient(
-    begin: Alignment.bottomLeft,
-    end: Alignment.topRight,
-    colors: [
-      Color(0xFF16A085), // Start Teal
-      Color(0xFF4285F4), // End Clear Blue
-    ],
-  );
-}
-
-class AppTheme {
-  AppTheme._();
-  static ThemeData lightTheme() {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSwatch(
-        primarySwatch: AppColors.primarySwatch,
-        backgroundColor: AppColors.light[500],
-      ).copyWith(surface: AppColors.white[500], onSurface: AppColors.dark[500]),
-      appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-        titleTextStyle: TextStyle(
-          color: AppColors.dark[500],
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-// --- End of Inline definitions ---
-
-void main() {
-  runApp(const AttendanceApp());
-}
-
-class AttendanceApp extends StatelessWidget {
-  const AttendanceApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Presensi Mobile',
-      theme: AppTheme.lightTheme(),
-      home: const HomeScreen(),
-    );
-  }
-}
+import 'package:absensi_geo/services/attendance_service.dart';
+import 'package:absensi_geo/theme/app_colors.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -112,9 +37,19 @@ class _HomeScreenState extends State<HomeScreen> {
   String _noClockIn = '--';
   int _lastUpdateCount = 0;
 
+  DateTime _selectedDate = DateTime.now();
+  List<DateTime> _dateList = [];
+
   @override
   void initState() {
     super.initState();
+
+    DateTime today = DateTime.now();
+    _dateList = List.generate(
+      15,
+      (index) =>
+          today.subtract(const Duration(days: 3)).add(Duration(days: index)),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -164,7 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           if (statusData != null && statusData['success'] == true) {
-            // Mengambil key check_in dari API, tapi menyimpannya ke variabel clock_in
             bool hasClockedIn = statusData['has_checked_in'] ?? false;
             bool hasClockedOut = statusData['has_checked_out'] ?? false;
 
@@ -183,7 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           if (historyData != null) {
-            // Plester Darurat: Filter data duplikat berdasarkan tanggal
             var uniqueAttendances = [];
             var seenDates = <String>{};
 
@@ -195,7 +128,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 uniqueAttendances.add(record);
               }
             }
-
             _recentAttendances = uniqueAttendances;
           }
         });
@@ -209,8 +141,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = authProvider.user;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: AppColors.light[500],
       body: SafeArea(
+        bottom: false,
         child: RefreshIndicator(
           onRefresh: _fetchHomeData,
           color: AppColors.primary[500],
@@ -230,7 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   user?.employee?.fullName ?? 'Tamu',
                 ),
                 const SizedBox(height: 20),
-                _buildSearchFilterBar(),
+                _buildHorizontalDatePicker(),
                 const SizedBox(height: 24),
                 _buildMainGradientCard(context),
                 const SizedBox(height: 24),
@@ -284,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: AppColors.primarySwatch[500]!,
+                color: AppColors.primary[500]!, // Diperbarui
                 width: 2,
               ),
             ),
@@ -304,95 +237,174 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSearchFilterBar() {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.dark05),
-          ),
-          child: Icon(Icons.tune, color: AppColors.primarySwatch[500]),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.dark05),
-            ),
-            child: const TextField(
-              decoration: InputDecoration(
-                hintText: 'Cari...',
-                prefixIcon: Icon(Icons.search, color: Colors.grey),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
+  Widget _buildHorizontalDatePicker() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      // Beri sedikit padding agar shadow kartu pertama tidak terpotong
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: _dateList.map((date) {
+          // Cek apakah kotak ini adalah tanggal yang sedang dipilih
+          bool isSelected =
+              date.day == _selectedDate.day &&
+              date.month == _selectedDate.month &&
+              date.year == _selectedDate.year;
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedDate = date;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 65,
+              height: 75,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primary[500] : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: isSelected
+                    ? null
+                    : Border.all(color: Colors.grey.shade200),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary[500]!.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : [],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat(
+                      'dd',
+                    ).format(date), // Menampilkan "06", "07", "08"
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : AppColors.dark[500],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat(
+                      'E',
+                      'id_ID',
+                    ).format(date), // Menampilkan "Thu", "Fri", "Sat"
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.9)
+                          : Colors.grey.shade500,
+                      fontWeight: isSelected
+                          ? FontWeight.w500
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-        ),
-      ],
+          );
+        }).toList(),
+      ),
     );
   }
 
   Widget _buildMainGradientCard(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: AppColors.gradient2,
+        color: AppColors.primary[500], // Warna biru solid
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primarySwatch[500]!.withValues(alpha: 0.3),
+            color: AppColors.primary[500]!.withValues(alpha: 0.3),
             blurRadius: 15,
             offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const LiveDateClock(),
-              Row(
+      // ClipRRect memastikan ornamen lingkaran tidak bocor keluar dari sudut melengkung kartu
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            // --- ORNAMEN ABSTRAK 1 (Pojok Kanan Atas) ---
+            Positioned(
+              top: -30,
+              right: -20,
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.1), // Transparan 10%
+                ),
+              ),
+            ),
+            // --- ORNAMEN ABSTRAK 2 (Bawah Kanan) ---
+            Positioned(
+              bottom: -40,
+              right: 80,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+            ),
+
+            // --- KONTEN UTAMA KARTU ---
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.history_toggle_off,
-                    color: Colors.white,
-                    size: 16,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const LiveDateClock(),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.history_toggle_off,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            '09.00 - 17.00',
+                            style: TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.white.withValues(alpha: 0.7),
+                            size: 12,
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    '09.00 - 17.00',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    color: Colors.white.withValues(alpha: 0.7),
-                    size: 12,
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(child: _buildClockCard('MASUK', _clockInTime)),
+                      const SizedBox(width: 16),
+                      Expanded(child: _buildClockCard('KELUAR', _clockOutTime)),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _buildClockCard('MASUK', _clockInTime)),
-              const SizedBox(width: 16),
-              Expanded(child: _buildClockCard('KELUAR', _clockOutTime)),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -409,7 +421,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.login, size: 18, color: AppColors.primarySwatch[500]),
+              Icon(
+                Icons.login,
+                size: 18,
+                color: AppColors.primary[500],
+              ), // Diperbarui
               const SizedBox(width: 8),
               Text(
                 title,
@@ -426,7 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: AppColors.primarySwatch[500],
+              color: AppColors.primary[500], // Diperbarui
             ),
           ),
         ],
@@ -455,7 +471,7 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.bold,
-            color: AppColors.primarySwatch[500],
+            color: AppColors.primary[500], // Diperbarui
           ),
         ),
       ],
@@ -473,7 +489,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildCategoryCard(
               'Cuti',
               Icons.access_time,
-              // isSelected: true,
               onTap: () {
                 Navigator.push(
                   context,
@@ -519,7 +534,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 30,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.primarySwatch[500],
+                color: AppColors.primary[500], // Diperbarui
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -554,7 +569,9 @@ class _HomeScreenState extends State<HomeScreen> {
             width: 60,
             height: 60,
             decoration: BoxDecoration(
-              color: isSelected ? AppColors.primarySwatch[500] : Colors.white,
+              color: isSelected
+                  ? AppColors.primary[500]
+                  : Colors.white, // Diperbarui
               borderRadius: BorderRadius.circular(16),
               border: !isSelected && !isViewAll
                   ? Border.all(color: AppColors.dark05)
@@ -573,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? Colors.white
                   : (isViewAll
                         ? Colors.grey[700]
-                        : AppColors.secondarySwatch[500]),
+                        : AppColors.secondary[500]), // Diperbarui
               size: isViewAll ? 20 : 28,
             ),
           ),
@@ -622,18 +639,13 @@ class _HomeScreenState extends State<HomeScreen> {
           String status = record['status'] ?? 'Tidak Diketahui';
           Color statusColor = _getSemanticColor(status);
 
-          // Mengambil dari database key: 'check_in', tapi memakai nama variabel frontend: 'rawClockIn'
           String rawClockIn = record['check_in']?.toString() ?? '';
           String rawClockOut = record['check_out']?.toString() ?? '';
 
-          // 1. Jika clock-in kosong/null, langsung jadikan 'N/A'
           String clockInDisplay = (rawClockIn.isEmpty || rawClockIn == 'null')
               ? 'N/A'
               : rawClockIn;
 
-          // 2. Jika clock-out kosong/null:
-          //    - Kalau clock-in juga 'N/A' (alpha) -> jadikan 'N/A'
-          //    - Kalau clock-in ada isinya (sedang bekerja) -> jadikan '-- : -- : --'
           String clockOutDisplay =
               (rawClockOut.isEmpty || rawClockOut == 'null')
               ? (clockInDisplay == 'N/A' ? 'N/A' : '-- : -- : --')
@@ -763,7 +775,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Text(
               'Lihat Semua',
               style: TextStyle(
-                color: AppColors.primary[500],
+                color: AppColors.primary[500], // Diperbarui
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -788,15 +800,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Color _getSemanticColor(String? status) {
-    if (status == null) return Colors.red[500]!;
+    if (status == null) {
+      return AppColors.tertiary[500]!; // Diperbarui pakai Coral Red
+    }
 
     String s = status.toLowerCase();
     if (s.contains('hadir') || s.contains('reguler') || s.contains('present')) {
       return AppColors.primary[500]!;
     } else if (s.contains('telat') || s.contains('late')) {
-      return Colors.green[500]!;
+      return AppColors.secondary[500]!; // Diperbarui pakai Lime Green
     } else {
-      return Colors.red[500]!;
+      return AppColors.tertiary[500]!;
     }
   }
 }
@@ -836,7 +850,7 @@ class _LiveDateClockState extends State<LiveDateClock> {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Hari ini, ${DateFormat('dd MMMM yyyy').format(_currentTime)}',
+      'Hari ini, ${DateFormat('dd MMMM yyyy', 'id_ID').format(_currentTime)}',
       style: const TextStyle(
         color: Colors.white,
         fontWeight: FontWeight.bold,

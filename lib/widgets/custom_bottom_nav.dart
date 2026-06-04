@@ -14,73 +14,73 @@ class CustomBottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // SafeArea ensures the margin doesn't get pushed off-screen by the phone's physical bezel
-    return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF24A49C), // Teal
-              Color(0xFF3B82F6), // Blue
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          borderRadius: BorderRadius.circular(
-            30,
-          ), // Guarantees the capsule shape
-          boxShadow: [
-            BoxShadow(
-              // ignore: deprecated_member_use
-              color: const Color(0xFF3B82F6).withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
+    return BottomAppBar(
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+
+      elevation: 0,
+
+      clipBehavior: Clip.antiAlias,
+      shape: const CircularNotchedRectangle(),
+      notchMargin: 7.0,
+      child: SizedBox(
+        height: 65,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _buildNavItem(Icons.home_outlined, 0),
-            _buildNavItem(Icons.access_time, 1),
-            _buildNavItem(Icons.calendar_today, 2),
-            _buildNavItem(Icons.notifications_none, 3),
-            _buildNavItem(Icons.person_outline, 4),
+            _buildNavItem(Icons.home, Icons.home_outlined, 'Home', 0),
+            _buildNavItem(
+              Icons.event_available,
+              Icons.event_available_outlined,
+              'Cuti',
+              2,
+            ),
+            const SizedBox(width: 40),
+            _buildNavItem(
+              Icons.fact_check,
+              Icons.fact_check_outlined,
+              'History',
+              3,
+            ),
+            _buildNavItem(Icons.person, Icons.person_outline, 'Profile', 4),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNavItem(IconData icon, int index) {
+  // --- Helper untuk membangun Item Navbar ---
+  Widget _buildNavItem(
+    IconData activeIcon,
+    IconData inactiveIcon,
+    String label,
+    int index,
+  ) {
     final isActive = selectedIndex == index;
+    final color = isActive ? const Color(0xFF2F80ED) : Colors.black87;
 
     return GestureDetector(
       onTap: () => onItemTapped(index),
       behavior: HitTestBehavior.opaque,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(
-            icon,
-            color: isActive ? Colors.white : Colors.white70,
-            size: isActive ? 28 : 24,
-          ),
-          if (isActive)
-            Positioned(
-              bottom: -10,
-              child: Container(
-                width: 4,
-                height: 4,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
+      child: SizedBox(
+        width: 60,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(isActive ? activeIcon : inactiveIcon, color: color, size: 26),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
