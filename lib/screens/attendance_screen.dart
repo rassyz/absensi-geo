@@ -129,6 +129,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       desiredAccuracy: LocationAccuracy.high,
     );
 
+    // fake GPS detection
+    if (position.isMocked) {
+      throw Exception(
+        'Terdeteksi penggunaan aplikasi Fake GPS / Mock Location! Harap matikan untuk menggunakan aplikasi.',
+      );
+    }
+
     if (mounted) {
       setState(() {
         _userLocation = LatLng(position.latitude, position.longitude);
@@ -153,7 +160,32 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _processAttendance(String token) async {
+    // Sebelum membuka kamera, cek lokasi real-time untuk deteksi fake GPS
+    try {
+      Position currentPosition = await Geolocator.getCurrentPosition(
+        // ignore: deprecated_member_use
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (currentPosition.isMocked) {
+        // ignore: use_build_context_synchronously
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              "Gagal: Fake GPS terdeteksi saat percobaan presensi!",
+            ),
+            backgroundColor:
+                AppColors.tertiary[500], // Warna merah dari theme Anda
+          ),
+        );
+        return; // Hentikan proses secara total, jangan buka kamera
+      }
+    } catch (e) {
+      debugPrint("Gagal mengecek lokasi real-time: $e");
+    }
+
     if (_userLocation == null) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Waiting for GPS location..."),
