@@ -3,6 +3,7 @@
 namespace App\Filament\Admin\Resources\Leaves\Tables;
 
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
@@ -20,7 +21,10 @@ class LeavesTable
                     ->sortable()
                     ->searchable(),
 
-                TextColumn::make('leave_type')->searchable(),
+                TextColumn::make('leaveType.name')
+                    ->label('Leave Type')
+                    ->sortable()
+                    ->searchable(),
                 TextColumn::make('start_date')->date()->sortable(),
                 TextColumn::make('end_date')->date()->sortable(),
                 TextColumn::make('apply_days')->numeric()->sortable(),
@@ -40,6 +44,10 @@ class LeavesTable
                     ->label('Approved By')
                     ->sortable(),
 
+                TextColumn::make('approved_at')
+                    ->date()
+                    ->sortable(),
+
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -55,6 +63,7 @@ class LeavesTable
             ])
             ->recordActions([
                 EditAction::make(),
+                DeleteAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

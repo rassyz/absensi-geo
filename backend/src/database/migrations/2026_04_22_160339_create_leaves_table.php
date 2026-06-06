@@ -17,19 +17,25 @@ return new class extends Migration
             $table->foreignId('employee_id')->constrained()->cascadeOnDelete();
 
             // Leave details
-            $table->string('leave_type'); // e.g., 'Cuti Tahunan', 'Cuti Sakit'
+            $table->foreignId('leave_type_id')->constrained()->cascadeOnDelete();
             $table->date('start_date');
             $table->date('end_date');
-            $table->integer('apply_days'); // Total days requested
+            $table->integer('apply_days');
             $table->text('reason');
-            $table->string('attachment')->nullable(); // File path for sick notes, etc.
+            $table->string('attachment')->nullable();
 
             // Status and Approval
             $table->enum('status', ['Pending', 'Approved', 'Rejected', 'Cancelled'])->default('Pending');
-            // Assuming the approver is linked to the users table. Adjust if it links to employees instead.
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('approved_at')->nullable();
+            $table->text('rejection_reason')->nullable();
 
             $table->timestamps();
+
+            // --- INDEXING ---
+            $table->index(['employee_id', 'status']);
+            $table->index(['approved_by', 'status']);
+            $table->index('created_at');
         });
     }
 

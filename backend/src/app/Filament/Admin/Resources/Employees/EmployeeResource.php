@@ -24,6 +24,11 @@ class EmployeeResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'HR Management';
 
+    public static function getNavigationBadge(): string
+    {
+        return (string) self::getModel()::count();
+    }
+
     public static function form(Schema $schema): Schema
     {
         return EmployeeForm::configure($schema);

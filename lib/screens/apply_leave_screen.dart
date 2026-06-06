@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
+import 'package:absensi_geo/providers/leave_provider.dart'; // Pastikan import provider
 import 'package:absensi_geo/services/leave_service.dart';
 import 'dart:io';
 
@@ -25,19 +26,27 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   DateTime? _endDate = DateTime.now();
 
   // Dropdown State
-  String _selectedLeaveType = 'Cuti Tahunan';
-  final List<String> _leaveTypes = [
-    'Cuti Sakit',
-    'Cuti Tahunan',
-    'Cuti Melahirkan',
-    'Cuti Alasan Penting',
-  ];
+  int? _selectedLeaveTypeId; // Sekarang menggunakan ID (Integer)
 
   // Image Picker State
   File? _attachedDocument;
   final ImagePicker _picker = ImagePicker();
 
   bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Ambil data tipe cuti saat halaman pertama kali dibuka
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final leaveProvider = Provider.of<LeaveProvider>(context, listen: false);
+
+      if (authProvider.user?.token != null) {
+        leaveProvider.fetchLeaveTypes(authProvider.user!.token);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -148,10 +157,14 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   Future<void> _submitLeave() async {
     if (_reasonController.text.trim().isEmpty ||
         _startDate == null ||
-        _endDate == null) {
+        _endDate == null ||
+        _selectedLeaveTypeId == null) {
+      // Validasi tambahan untuk dropdown
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please fill all required fields (Dates and Reason)'),
+          content: Text(
+            'Pastikan semua form (Jenis Cuti, Tanggal, dan Alasan) terisi.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -161,7 +174,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     if (_calculatedApplyDays <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('End date must be after start date'),
+          content: Text(
+            'Tanggal selesai harus setelah atau sama dengan tanggal mulai.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -177,7 +192,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
     final success = await LeaveService().submitLeaveRequest(
       token: token,
-      leaveType: _selectedLeaveType,
+      leaveTypeId: _selectedLeaveTypeId!.toString(), // Menggunakan Integer ID
       startDate: DateFormat('yyyy-MM-dd').format(_startDate!),
       endDate: DateFormat('yyyy-MM-dd').format(_endDate!),
       applyDays: _calculatedApplyDays,
@@ -189,6 +204,12 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
     setState(() => _isSubmitting = false);
 
     if (success) {
+      // Refresh list cuti di dashboard setelah submit berhasil
+      Provider.of<LeaveProvider>(
+        context,
+        listen: false,
+      ).fetchLeaveData(token, forceRefresh: true);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cuti diajukan berhasil!'),
@@ -210,6 +231,14 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Memantau state leaveProvider
+    final leaveProvider = Provider.of<LeaveProvider>(context);
+
+    // Auto-select dropdown jika data sudah di-load tapi belum ada yang dipilih
+    if (_selectedLeaveTypeId == null && leaveProvider.leaveTypes.isNotEmpty) {
+      _selectedLeaveTypeId = leaveProvider.leaveTypes.first['id'];
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -239,16 +268,25 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildDropdownField(
-                label: 'Jenis Cuti',
-                value: _selectedLeaveType,
-                items: _leaveTypes,
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() => _selectedLeaveType = newValue);
-                  }
-                },
-              ),
+              // Tampilkan loading jika data master sedang diambil
+              leaveProvider.isFetchingTypes
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  : _buildDropdownField(
+                      label: 'Jenis Cuti',
+                      value: _selectedLeaveTypeId,
+                      items: leaveProvider.leaveTypes,
+                      onChanged: (int? newValue) {
+                        if (newValue != null) {
+                          setState(() => _selectedLeaveTypeId = newValue);
+                        }
+                      },
+                    ),
+
               const SizedBox(height: 16),
 
               Row(
@@ -328,9 +366,9 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   Widget _buildDropdownField({
     required String label,
-    required String value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
+    required int? value, // SEKARANG INT
+    required List<Map<String, dynamic>> items, // SEKARANG MENGGUNAKAN MAP
+    required ValueChanged<int?> onChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -354,7 +392,8 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
               ),
             ),
             DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
+              child: DropdownButton<int>(
+                // TYPE SEKARANG INT
                 value: value,
                 isExpanded: true,
                 icon: Icon(
@@ -363,10 +402,10 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
                 ),
                 style: TextStyle(fontSize: 14, color: AppColors.dark[500]),
                 onChanged: onChanged,
-                items: items.map<DropdownMenuItem<String>>((String item) {
-                  return DropdownMenuItem<String>(
-                    value: item,
-                    child: Text(item),
+                items: items.map<DropdownMenuItem<int>>((item) {
+                  return DropdownMenuItem<int>(
+                    value: item['id'], // Gunakan ID sebagai value
+                    child: Text(item['name']), // Tampilkan Name
                   );
                 }).toList(),
               ),

@@ -59,18 +59,13 @@ class AttendancesTable
                 TextColumn::make('status')
                     ->label('Status')
                     ->sortable(),
-                TextColumn::make('created_at')
-                    ->label('Created At')
-                    ->dateTime('d M Y - H:i')
-                    ->timezone('Asia/Jakarta')
-                    ->dateTime()
+                TextColumn::make('source')
+                    ->label('Sumber')
                     ->sortable(),
-                TextColumn::make('updated_at')
-                    ->label('Updated At')
-                    ->dateTime('d M Y - H:i')
-                    ->timezone('Asia/Jakarta')
-                    ->dateTime()
-                    ->sortable(),
+                TextColumn::make('leave.leaveType.name')
+                    ->label('Jenis Cuti')
+                    ->sortable()
+                    ->searchable(),
             ])
             ->filters([
                 SelectFilter::make('employee_id')

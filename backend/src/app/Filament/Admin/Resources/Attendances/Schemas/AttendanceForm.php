@@ -20,7 +20,7 @@ class AttendanceForm
                     ->searchable()
                     ->required(),
                 Select::make('attendance_zone_id')
-                    ->label('Zona Absensi')
+                    ->label('Zona Presensi')
                     ->relationship('attendanceZone', 'name')
                     ->required(),
                 DatePicker::make('date')
@@ -35,18 +35,30 @@ class AttendanceForm
                     ->label('Check-Out')
                     ->nullable()
                     ->seconds(false),
+                Select::make('source')
+                    ->label('Sumber Presensi')
+                    ->options([
+                        'Mobile' => 'Mobile',
+                        'Web Admin' => 'Web Admin',
+                        'System' => 'System',
+                    ])
+                    ->required(),
                 Select::make('status')
                     ->label('Status')
                     ->options([
-                        'hadir' => 'Hadir',
-                        'sakit' => 'Sakit',
-                        'cuti' => 'Cuti',
-                        'absent' => 'Alpha',
-                        'late' => 'Telat',
-                        'early_leave' => 'Pulang Cepat',
+                        'Hadir' => 'Hadir',
+                        'Sakit' => 'Sakit',
+                        'Cuti' => 'Cuti',
+                        'Alpha' => 'Alpha',
+                        'Telat' => 'Telat',
+                        'Pulang Cepat' => 'Pulang Cepat',
                     ])
-                    ->columnSpanFull()
                     ->required(),
+                Select::make('leave_id')
+                    ->label('Jenis Cuti')
+                    ->relationship('leave', 'leave_type_id')
+                    ->preload()
+                    ->nullable(),
                 FileUpload::make('check_in_photo_path')
                     ->label('Foto Check-In')
                     ->image() // Menandakan ini file gambar agar muncul preview

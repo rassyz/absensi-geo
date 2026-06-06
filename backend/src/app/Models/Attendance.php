@@ -12,6 +12,7 @@ class Attendance extends Model
     protected $fillable = [
         'employee_id',
         'attendance_zone_id',
+        'leave_id',
         'date',
         'check_in',
         'check_out',
@@ -22,6 +23,7 @@ class Attendance extends Model
         'check_in_photo_path',
         'check_out_photo_path',
         'status',
+        'source',
     ];
 
     protected $casts = [
@@ -44,5 +46,10 @@ class Attendance extends Model
     public function attendanceZone()
     {
         return $this->belongsTo(AttendanceZone::class);
+    }
+
+    public function leave()
+    {
+        return $this->belongsTo(Leave::class);
     }
 }

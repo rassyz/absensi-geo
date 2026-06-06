@@ -643,6 +643,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     String s = status.toLowerCase();
     if (s.contains('hadir') || s.contains('reguler')) return 'Hadir';
     if (s.contains('telat') || s.contains('late')) return 'Telat';
+    if (s.contains('cuti') || s.contains('leave')) return 'Cuti';
     return 'Absen';
   }
 
@@ -654,6 +655,8 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
       return AppColors.primary[500]!;
     } else if (s.contains('telat') || s.contains('late')) {
       return Colors.green[500]!;
+    } else if (s.contains('cuti') || s.contains('leave')) {
+      return Colors.orange[500]!; // Warna Oranye untuk Cuti
     } else {
       return Colors.red[500]!;
     }

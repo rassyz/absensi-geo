@@ -21,6 +21,9 @@ return new class extends Migration
             $table->geometry('area', srid: 4326); // SRID 4326 untuk GPS coordinates
             $table->timestamps();
         });
+
+        // Membuat indeks spasial GIST agar kueri ST_DWithin berjalan sangat cepat
+        DB::statement('CREATE INDEX attendance_zones_area_gist_index ON attendance_zones USING GIST (area)');
     }
 
     /**

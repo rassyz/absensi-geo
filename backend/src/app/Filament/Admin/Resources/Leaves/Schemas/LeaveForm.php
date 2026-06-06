@@ -21,13 +21,10 @@ class LeaveForm
                     ->preload()
                     ->required(),
 
-                Select::make('leave_type')
-                    ->options([
-                        'Cuti Tahunan' => 'Cuti Tahunan',
-                        'Cuti Sakit' => 'Cuti Sakit',
-                        'Cuti Melahirkan' => 'Cuti Melahirkan',
-                        'Cuti Alasan Penting' => 'Cuti Alasan Penting',
-                    ])
+                Select::make('leave_type_id')
+                    ->relationship('leaveType', 'name')
+                    ->searchable()
+                    ->preload()
                     ->required(),
 
                 DatePicker::make('start_date')->required(),
@@ -36,14 +33,6 @@ class LeaveForm
                 TextInput::make('apply_days')
                     ->required()
                     ->numeric(),
-
-                FileUpload::make('attachment')
-                    ->directory('leave-attachments')
-                    ->columnSpanFull(),
-
-                Textarea::make('reason')
-                    ->required()
-                    ->columnSpanFull(),
 
                 Select::make('status')
                     ->options([
@@ -55,10 +44,21 @@ class LeaveForm
                     ->required()
                     ->default('Pending'),
 
+                FileUpload::make('attachment')
+                    ->directory('leave-attachments')
+                    ->columnSpanFull(),
+
+                Textarea::make('reason')
+                    ->required()
+                    ->columnSpanFull(),
+
                 Select::make('approved_by')
                     ->relationship('approver', 'name')
                     ->searchable()
                     ->preload(),
+
+                DatePicker::make('approved_at')
+                    ->nullable(),
             ]);
     }
 }

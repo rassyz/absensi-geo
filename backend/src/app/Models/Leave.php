@@ -16,7 +16,7 @@ class Leave extends Model
      */
     protected $fillable = [
         'employee_id',
-        'leave_type',
+        'leave_type_id',
         'start_date',
         'end_date',
         'apply_days',
@@ -24,6 +24,8 @@ class Leave extends Model
         'attachment',
         'status',
         'approved_by',
+        'approved_at',
+        'rejection_reason',
     ];
 
     /**
@@ -34,6 +36,7 @@ class Leave extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'approved_at' => 'datetime',
     ];
 
     /**
@@ -45,10 +48,26 @@ class Leave extends Model
     }
 
     /**
+    * Get the leave type associated with the leave request.
+    */
+    public function leaveType()
+    {
+        return $this->belongsTo(LeaveType::class, 'leave_type_id');
+    }
+
+    /**
      * Get the user (Head/Manager) who approved or rejected the leave.
      */
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+    * Get the attendances associated with this leave.
+    */
+    public function attendances()
+    {
+        return $this->hasMany(Attendance::class);
     }
 }

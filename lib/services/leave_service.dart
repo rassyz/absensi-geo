@@ -7,6 +7,30 @@ import 'package:flutter/foundation.dart';
 import 'package:absensi_geo/services/base_api_service.dart';
 
 class LeaveService extends BaseApiService {
+  // --- Mengambil Data Master Tipe Cuti ---
+  // Fungsi baru untuk mengisi Dropdown di form pengajuan cuti
+  Future<List<Map<String, dynamic>>?> getLeaveTypes(String token) async {
+    try {
+      final url = Uri.parse('${BaseApiService.baseUrl}/leave-types');
+      final headers = await getHeaders(token);
+
+      final response = await http.get(url, headers: headers);
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true) {
+          // Konversi data array ke List<Map<String, dynamic>>
+          return List<Map<String, dynamic>>.from(decoded['data']);
+        }
+      }
+      debugPrint('Gagal mengambil tipe cuti: ${response.body}');
+      return null;
+    } catch (e) {
+      debugPrint("Error API Leave Types: $e");
+      return null;
+    }
+  }
+
   // --- Mengambil Data Dashboard Cuti ---
   Future<Map<String, dynamic>?> getLeaveDashboard(String token) async {
     try {
@@ -30,7 +54,7 @@ class LeaveService extends BaseApiService {
   // --- Mengirim Pengajuan Cuti Baru (Dengan Attachment) ---
   Future<bool> submitLeaveRequest({
     required String token,
-    required String leaveType,
+    required String leaveTypeId,
     required String startDate,
     required String endDate,
     required int applyDays,
@@ -49,7 +73,7 @@ class LeaveService extends BaseApiService {
       request.headers.addAll(headers);
 
       // 4. Masukkan data teks ke dalam request fields
-      request.fields['leave_type'] = leaveType;
+      request.fields['leave_type_id'] = leaveTypeId.toString();
       request.fields['start_date'] = startDate;
       request.fields['end_date'] = endDate;
       request.fields['apply_days'] = applyDays

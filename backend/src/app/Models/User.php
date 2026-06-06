@@ -81,4 +81,10 @@ final class User extends Authenticatable implements FilamentUser, HasAvatar
     {
         return $this->hasMany(Overtime::class, 'admin_id');
     }
+
+    // Relasi One-to-Many ke Leave yang disetujui/ditolak (Head/Manager)
+    public function approvedLeaves()
+    {
+        return $this->hasMany(Leave::class, 'approved_by');
+    }
 }

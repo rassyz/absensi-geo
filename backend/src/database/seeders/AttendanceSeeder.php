@@ -24,7 +24,7 @@ class AttendanceSeeder extends Seeder
         ];
 
         $startDate = Carbon::parse('2026-03-01');
-        $endDate   = Carbon::parse('2026-04-23');
+        $endDate   = Carbon::parse('2026-06-01');
 
         $employees = [1, 2, 3, 4];
 

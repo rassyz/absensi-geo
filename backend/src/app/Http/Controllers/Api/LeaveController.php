@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Attendance;
 use App\Models\Leave;
-use Illuminate\Http\Request;
-use App\Models\Employee;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LeaveController extends Controller
 {
@@ -14,7 +15,7 @@ class LeaveController extends Controller
     {
         // 1. Validate the incoming data
         $validated = $request->validate([
-            'leave_type' => 'required|string',
+            'leave_type_id' => 'required|exists:leave_types,id',
             'start_date' => 'required|date',
             'end_date'   => 'required|date|after_or_equal:start_date',
             'apply_days' => 'required|integer|min:1',
@@ -38,25 +39,17 @@ class LeaveController extends Controller
             $attachmentPath = $request->file('attachment')->store('leave_attachments', 'public');
         }
 
-        // 3. LOGIC: Find the Highest Ranking Manager in the same department
-        $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
-
-        $departmentHead = Employee::where('department_id', $employee->department_id)
-            ->whereIn('position', $acceptableHeadTitles)
-            ->first();
-
         // 4. Insert into Database
         $leave = Leave::create([
             'employee_id' => $employee->id,
-            'leave_type'  => $validated['leave_type'],
+            'leave_type_id'  => $validated['leave_type_id'],
             'start_date'  => $validated['start_date'],
             'end_date'    => $validated['end_date'],
             'apply_days'  => $validated['apply_days'],
             'reason'      => $validated['reason'],
             'attachment'  => $attachmentPath,
             'status'      => 'Pending',
-            // Auto-assign the approver
-            'approved_by' => $departmentHead ? $departmentHead->user_id : null,
+            'approved_by' => null,
         ]);
 
         return response()->json([
@@ -72,41 +65,62 @@ class LeaveController extends Controller
             $user = $request->user();
             $employeeId = $user->employee->id;
 
-            // 1. Hitung Ringkasan (Summary)
-            $balance = 20; // Misalnya jatah tahunan statis 20
-            $approved = Leave::where('employee_id', $employeeId)->where('status', 'Approved')->count();
-            $pending = Leave::where('employee_id', $employeeId)->where('status', 'Pending')->count();
-            $cancelled = Leave::where('employee_id', $employeeId)->whereIn('status', ['Cancelled', 'Rejected'])->count();
+            // 1. Hitung Ringkasan (Summary) - Gunakan index [employee_id, status]
+            $summary = Leave::where('employee_id', $employeeId)
+                ->select('status', DB::raw('count(*) as total'))
+                ->groupBy('status')
+                ->get()
+                ->pluck('total', 'status');
 
-            $currentBalance = $balance - $approved; // Sisa cuti
+            $balance = 20; // Jatah cuti tahunan
+            $approved = $summary['Approved'] ?? 0;
+            $pending = $summary['Pending'] ?? 0;
+            $cancelled = $summary['Rejected'] ?? 0;
+
+            $currentBalance = $balance - $approved;
 
             // 2. Ambil Riwayat Cuti Pribadi (History)
-            $leaves = Leave::where('employee_id', $employeeId)
+            $leaves = Leave::with(['leaveType', 'approver'])
+                ->where('employee_id', $employeeId)
                 ->orderBy('created_at', 'desc')
                 ->get()
                 ->map(function ($leave) use ($currentBalance) {
                     return [
-                        'id' => $leave->id,
-                        'date_range' => Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . Carbon::parse($leave->end_date)->format('M d, Y'),
-                        'start_date' => $leave->start_date,
-                        'end_date' => $leave->end_date,
-                        'apply_days' => $leave->apply_days,
-                        'balance' => (string) $currentBalance,
-                        'leave_type' => $leave->leave_type,
-                        'reason' => $leave->reason,
+                        'id'          => $leave->id,
+                        'date_range'  => Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . Carbon::parse($leave->end_date)->format('M d, Y'),
+                        'start_date'  => $leave->start_date,
+                        'end_date'    => $leave->end_date,
+                        'apply_days'  => $leave->apply_days,
+                        'balance'     => (string) $currentBalance,
 
+                        // AMBIL DARI DATA MASTER (leaveType)
+                        'leave_type'  => $leave->leaveType ? $leave->leaveType->name : 'N/A',
+
+                        'reason'      => $leave->reason,
                         'approved_by' => $leave->status === 'Pending'
                                             ? '--'
-                                            : ($leave->approver ? $leave->approver->name : 'Manager'),
-
-                        'status' => ucfirst($leave->status),
-                        'is_past' => Carbon::parse($leave->end_date)->isPast(),
+                                            : ($leave->approver ? $leave->approver->name : 'Admin'),
+                        'status'      => ucfirst($leave->status),
+                        'is_past'     => Carbon::parse($leave->end_date)->isPast(),
                     ];
                 });
 
             // 3. Ambil Data Cuti Tim (Khusus Manager/Head)
-            $teamLeavesRaw = Leave::with('employee.user')
-                ->where('approved_by', $user->id)
+            $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
+
+            $teamLeavesRaw = Leave::with(['employee.user', 'leaveType'])
+                ->when(
+                    in_array($user->employee->position, $acceptableHeadTitles, true),
+                    function ($query) use ($employeeId, $user) {
+                        $query->whereHas('employee', function ($employeeQuery) use ($employeeId, $user) {
+                            $employeeQuery->where('department_id', $user->employee->department_id)
+                                ->where('id', '!=', $employeeId);
+                        });
+                    },
+                    function ($query) {
+                        $query->whereRaw('1 = 0');
+                    }
+                )
                 ->where('status', 'Pending')
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -114,32 +128,26 @@ class LeaveController extends Controller
             $teamLeaves = $teamLeavesRaw->map(function ($leave) {
                 $emp = $leave->employee;
                 $fullName = $emp ? ($emp->full_name ?? ($emp->user ? $emp->user->name : 'Unknown')) : 'Unknown Employee';
-                $position = $emp ? $emp->position : 'Staff Member';
-                $departmentName = $emp && $emp->department ? $emp->department->name : null;
-
-                // 👇 PERBAIKAN DI SINI: Ubah path lokal menjadi Full URL 👇
                 $rawAvatar = ($emp && $emp->user) ? $emp->user->avatar_url : null;
-
-                // Jika $rawAvatar ada isinya, gabungkan dengan asset('storage/...')
                 $avatarUrl = $rawAvatar ? asset('storage/' . $rawAvatar) : null;
 
                 return [
-                    'id' => $leave->id,
+                    'id'            => $leave->id,
                     'employee_name' => $fullName,
-                    'date_range' => \Carbon\Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . \Carbon\Carbon::parse($leave->end_date)->format('M d, Y'),
-                    'start_date' => $leave->start_date,
-                    'end_date' => $leave->end_date,
-                    'leave_type' => $leave->leave_type,
-                    'apply_days' => $leave->apply_days,
-                    'reason' => $leave->reason,
-                    'avatar_url' => $avatarUrl,
-                    'employee' => [
+                    'date_range'    => \Carbon\Carbon::parse($leave->start_date)->format('M d, Y') . ' - ' . \Carbon\Carbon::parse($leave->end_date)->format('M d, Y'),
+                    'start_date'    => $leave->start_date,
+                    'end_date'      => $leave->end_date,
+
+                    // AMBIL DARI DATA MASTER
+                    'leave_type'    => $leave->leaveType ? $leave->leaveType->name : 'N/A',
+
+                    'apply_days'    => $leave->apply_days,
+                    'reason'        => $leave->reason,
+                    'avatar_url'    => $avatarUrl,
+                    'employee'      => [
                         'full_name' => $fullName,
-                        'position' => $position,
-                        'department' => $departmentName,
-                        'user' => [
-                            'avatar_url' => $avatarUrl // Sekarang berisi http://domain.com/storage/avatars/...
-                        ]
+                        'position'  => $emp ? $emp->position : 'Staff Member',
+                        'user'      => ['avatar_url' => $avatarUrl]
                     ]
                 ];
             });
@@ -147,12 +155,12 @@ class LeaveController extends Controller
             return response()->json([
                 'success' => true,
                 'summary' => [
-                    'balance' => (string) $currentBalance,
-                    'approved' => (string) $approved,
-                    'pending' => (string) $pending,
+                    'balance'   => (string) $currentBalance,
+                    'approved'  => (string) $approved,
+                    'pending'   => (string) $pending,
                     'cancelled' => (string) $cancelled,
                 ],
-                'leaves' => $leaves,
+                'leaves'      => $leaves,
                 'team_leaves' => $teamLeaves
             ]);
         } catch (\Exception $e) {
@@ -167,24 +175,87 @@ class LeaveController extends Controller
             'status' => 'required|in:Approved,Rejected'
         ]);
 
-        $leave = Leave::find($id);
+        // Ambil data cuti beserta relasi employee
+        $leave = Leave::with(['employee.department.attendanceZones', 'leaveType'])->find($id);
 
         if (!$leave) {
             return response()->json(['success' => false, 'message' => 'Leave not found'], 404);
         }
 
-        // Keamanan: Pastikan hanya atasan yang ditunjuk yang bisa mengubah status ini
-        if ($leave->approved_by !== $request->user()->id) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized to process this leave'], 403);
+        // Cegah proses berulang jika status sudah Approved
+        if ($leave->status === 'Approved' && $request->status === 'Approved') {
+            return response()->json(['success' => false, 'message' => 'Leave is already approved.']);
         }
 
-        // Perbarui status
-        $leave->status = $request->status;
-        $leave->save();
+        try {
+            DB::beginTransaction();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Leave ' . $request->status . ' successfully'
-        ]);
+            $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
+
+            // 👇 VALIDASI UTAMA: Pastikan atasan berada di departemen yang sama dan punya jabatan yang sesuai
+            if (!$leave->employee || !$request->user()->employee ||
+                $leave->employee->department_id !== $request->user()->employee->department_id ||
+                !in_array($request->user()->employee->position, $acceptableHeadTitles, true)
+            ) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized to process this leave'], 403);
+            }
+
+            // Perbarui status cuti
+            $leave->status = $request->status;
+            $leave->approved_by = $request->user()->id;
+            $leave->approved_at = now();
+            $leave->save();
+
+            // JIKA APPROVED, GENERATE ATTENDANCE RECORD (Otomatis dari sistem)
+            if ($request->status === 'Approved') {
+                $this->generateLeaveAttendances($leave);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Leave ' . $request->status . ' successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan sistem: ' . $e->getMessage()
+            ], 500);
+        }
     }
+
+    // Fungsi untuk membuat data absensi otomatis saat cuti disetujui
+    private function generateLeaveAttendances(Leave $leave)
+    {
+        $startDate = Carbon::parse($leave->start_date);
+        $endDate = Carbon::parse($leave->end_date);
+
+
+        // Looping dari tanggal mulai sampai tanggal selesai cuti
+        for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+
+            // OPSIONAL: Jika cuti tidak dihitung pada hari Sabtu & Minggu, uncomment kode di bawah ini:
+            if ($date->isWeekend()) {
+                continue;
+            }
+
+            // Gunakan updateOrCreate untuk mencegah data ganda jika terjadi proses berulang
+            Attendance::updateOrCreate(
+                [
+                    'employee_id' => $leave->employee_id,
+                    'date'        => $date->toDateString(),
+                ],
+                [
+                    'leave_id'           => $leave->id, // Hubungkan dengan ID cuti untuk referensi
+                    'status'             => 'Cuti',
+                    'source'             => 'System',
+                ]
+            );
+        }
+    }
+
+
 }

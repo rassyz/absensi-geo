@@ -119,7 +119,8 @@ class AttendanceController extends Controller
                     'check_out_latitude'    => null,
                     'check_out_longitude'   => null,
                     'check_out_photo_path'  => null,
-                    'status'                => $status, // 🔥 dynamic
+                    'status'                => $status,
+                    'source'                => 'Mobile',
                 ]);
 
                 return response()->json([
@@ -191,7 +192,6 @@ class AttendanceController extends Controller
                     'check_out_latitude'    => $request->latitude,
                     'check_out_longitude'   => $request->longitude,
                     'check_out_photo_path'  => $photoPath,
-                    // 'status'                => 'Hadir',
                 ]);
 
                 return response()->json([
@@ -337,6 +337,7 @@ class AttendanceController extends Controller
             $totalAttendance = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('check_in', $currentMonth)
                 ->whereYear('check_in', $currentYear)
+                ->whereNotNull('check_in')
                 ->count();
 
             // 2. Late Clock In (Assuming late is after 09:00:00)
@@ -350,8 +351,8 @@ class AttendanceController extends Controller
             // for absences, check for null check_ins. Otherwise, this might query an 'absences' table).
             // Example:
             $noClockIn = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('created_at', $currentMonth)
-                ->whereYear('created_at', $currentYear)
+                ->whereMonth('date', $currentMonth)
+                ->whereYear('date', $currentYear)
                 ->whereNull('check_in')
                 ->count();
 
@@ -429,6 +430,7 @@ class AttendanceController extends Controller
             $totalAttendance = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('date', $month)
                 ->whereYear('date', $year)
+                ->whereNotNull('check_in')
                 ->count();
 
             // 🔥 PERBAIKAN: Gunakan kolom 'date' & pastikan 'check_in' tidak null

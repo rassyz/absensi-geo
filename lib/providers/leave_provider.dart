@@ -14,14 +14,20 @@ class LeaveProvider extends ChangeNotifier {
   List<dynamic> allLeaves = [];
   List<dynamic> teamLeaves = [];
 
+  List<Map<String, dynamic>> leaveTypes = [];
+
   bool isLoaded = false;
   bool isFetching = false;
+
+  bool isTypesLoaded = false;
+  bool isFetchingTypes = false;
 
   // Fungsi untuk mengambil data (bisa dipanggil di background)
   Future<void> fetchLeaveData(String token, {bool forceRefresh = false}) async {
     if (isLoaded && !forceRefresh) return; // Gunakan cache jika sudah ada
 
     isFetching = true;
+    notifyListeners();
 
     try {
       final data = await _service.getLeaveDashboard(token);
@@ -45,6 +51,30 @@ class LeaveProvider extends ChangeNotifier {
     }
   }
 
+  // 👇 TAMBAHAN BARU: Fungsi untuk mengambil data master tipe cuti
+  Future<void> fetchLeaveTypes(
+    String token, {
+    bool forceRefresh = false,
+  }) async {
+    if (isTypesLoaded && !forceRefresh) return; // Gunakan cache jika sudah ada
+
+    isFetchingTypes = true;
+    notifyListeners();
+
+    try {
+      final types = await _service.getLeaveTypes(token);
+      if (types != null) {
+        leaveTypes = types;
+        isTypesLoaded = true;
+      }
+    } catch (e) {
+      debugPrint('Error fetching leave types: $e');
+    } finally {
+      isFetchingTypes = false;
+      notifyListeners();
+    }
+  }
+
   // Fungsi pembantu untuk menghapus cuti tim dari daftar setelah di-approve/reject
   void removeTeamLeave(int leaveId) {
     teamLeaves.removeWhere((leave) => leave['id'] == leaveId);
@@ -61,6 +91,9 @@ class LeaveProvider extends ChangeNotifier {
     };
     allLeaves = [];
     teamLeaves = [];
+    leaveTypes = [];
+    isTypesLoaded = false;
+    isFetchingTypes = false;
     isLoaded = false;
     isFetching = false;
     notifyListeners();
