@@ -13,17 +13,15 @@ class LeaveController extends Controller
 {
     public function store(Request $request)
     {
-        // 1. Validate the incoming data
         $validated = $request->validate([
             'leave_type_id' => 'required|exists:leave_types,id',
             'start_date' => 'required|date',
             'end_date'   => 'required|date|after_or_equal:start_date',
             'apply_days' => 'required|integer|min:1',
             'reason'     => 'required|string',
-            'attachment' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240', // max 10MB
+            'attachment' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:10240',
         ]);
 
-        // Get the authenticated user's employee record
         $user = $request->user();
         if (!$user || !$user->employee) {
             return response()->json([
@@ -33,13 +31,11 @@ class LeaveController extends Controller
         }
         $employee = $user->employee;
 
-        // 2. Upload Attachment (if provided)
         $attachmentPath = null;
         if ($request->hasFile('attachment')) {
             $attachmentPath = $request->file('attachment')->store('leave_attachments', 'public');
         }
 
-        // 4. Insert into Database
         $leave = Leave::create([
             'employee_id' => $employee->id,
             'leave_type_id'  => $validated['leave_type_id'],
@@ -65,21 +61,19 @@ class LeaveController extends Controller
             $user = $request->user();
             $employeeId = $user->employee->id;
 
-            // 1. Hitung Ringkasan (Summary) - Gunakan index [employee_id, status]
             $summary = Leave::where('employee_id', $employeeId)
                 ->select('status', DB::raw('count(*) as total'))
                 ->groupBy('status')
                 ->get()
                 ->pluck('total', 'status');
 
-            $balance = 20; // Jatah cuti tahunan
+            $balance = 20; // jatah cuti
             $approved = $summary['Approved'] ?? 0;
             $pending = $summary['Pending'] ?? 0;
             $cancelled = $summary['Rejected'] ?? 0;
 
             $currentBalance = $balance - $approved;
 
-            // 2. Ambil Riwayat Cuti Pribadi (History)
             $leaves = Leave::with(['leaveType', 'approver'])
                 ->where('employee_id', $employeeId)
                 ->orderBy('created_at', 'desc')
@@ -93,7 +87,6 @@ class LeaveController extends Controller
                         'apply_days'  => $leave->apply_days,
                         'balance'     => (string) $currentBalance,
 
-                        // AMBIL DARI DATA MASTER (leaveType)
                         'leave_type'  => $leave->leaveType ? $leave->leaveType->name : 'N/A',
 
                         'reason'      => $leave->reason,
@@ -105,7 +98,6 @@ class LeaveController extends Controller
                     ];
                 });
 
-            // 3. Ambil Data Cuti Tim (Khusus Manager/Head)
             $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
 
             $teamLeavesRaw = Leave::with(['employee.user', 'leaveType'])
@@ -138,7 +130,6 @@ class LeaveController extends Controller
                     'start_date'    => $leave->start_date,
                     'end_date'      => $leave->end_date,
 
-                    // AMBIL DARI DATA MASTER
                     'leave_type'    => $leave->leaveType ? $leave->leaveType->name : 'N/A',
 
                     'apply_days'    => $leave->apply_days,
@@ -168,21 +159,18 @@ class LeaveController extends Controller
         }
     }
 
-    // 4. TAMBAHAN BARU: Fungsi untuk memproses persetujuan/penolakan
     public function process(Request $request, $id)
     {
         $request->validate([
             'status' => 'required|in:Approved,Rejected'
         ]);
 
-        // Ambil data cuti beserta relasi employee
         $leave = Leave::with(['employee.department.attendanceZones', 'leaveType'])->find($id);
 
         if (!$leave) {
             return response()->json(['success' => false, 'message' => 'Leave not found'], 404);
         }
 
-        // Cegah proses berulang jika status sudah Approved
         if ($leave->status === 'Approved' && $request->status === 'Approved') {
             return response()->json(['success' => false, 'message' => 'Leave is already approved.']);
         }
@@ -192,7 +180,6 @@ class LeaveController extends Controller
 
             $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
 
-            // 👇 VALIDASI UTAMA: Pastikan atasan berada di departemen yang sama dan punya jabatan yang sesuai
             if (!$leave->employee || !$request->user()->employee ||
                 $leave->employee->department_id !== $request->user()->employee->department_id ||
                 !in_array($request->user()->employee->position, $acceptableHeadTitles, true)
@@ -200,13 +187,11 @@ class LeaveController extends Controller
                 return response()->json(['success' => false, 'message' => 'Unauthorized to process this leave'], 403);
             }
 
-            // Perbarui status cuti
             $leave->status = $request->status;
             $leave->approved_by = $request->user()->id;
             $leave->approved_at = now();
             $leave->save();
 
-            // JIKA APPROVED, GENERATE ATTENDANCE RECORD (Otomatis dari sistem)
             if ($request->status === 'Approved') {
                 $this->generateLeaveAttendances($leave);
             }
@@ -234,22 +219,20 @@ class LeaveController extends Controller
         $endDate = Carbon::parse($leave->end_date);
 
 
-        // Looping dari tanggal mulai sampai tanggal selesai cuti
         for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
 
-            // OPSIONAL: Jika cuti tidak dihitung pada hari Sabtu & Minggu, uncomment kode di bawah ini:
+            // tidak hitung hari libur
             if ($date->isWeekend()) {
                 continue;
             }
 
-            // Gunakan updateOrCreate untuk mencegah data ganda jika terjadi proses berulang
             Attendance::updateOrCreate(
                 [
                     'employee_id' => $leave->employee_id,
                     'date'        => $date->toDateString(),
                 ],
                 [
-                    'leave_id'           => $leave->id, // Hubungkan dengan ID cuti untuk referensi
+                    'leave_id'           => $leave->id,
                     'status'             => 'Cuti',
                     'source'             => 'System',
                 ]

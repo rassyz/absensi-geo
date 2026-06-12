@@ -10,7 +10,7 @@ class LeaveTypeController extends Controller
 {
     public function index(): JsonResponse
     {
-        $types = LeaveType::all(['id', 'name']); // Hanya ambil yang perlu
+        $types = LeaveType::all(['id', 'name']);
         return response()->json([
             'success' => true,
             'data' => $types

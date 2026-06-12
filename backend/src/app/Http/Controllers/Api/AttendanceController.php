@@ -9,20 +9,16 @@ use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB; // Added for ST_AsText query
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class AttendanceController extends Controller
 {
-    /**
-     * Mengambil data zona absensi user untuk ditampilkan di Peta Flutter.
-     */
     public function getUserZone(Request $request)
     {
         try {
             $user = $request->user();
 
-            // Menggunakan relasi berantai: User -> Employee -> Department -> Zones
             $user->loadMissing('employee.department.attendanceZones');
 
             $employee = $user->employee;
@@ -43,7 +39,7 @@ class AttendanceController extends Controller
                 ], 404);
             }
 
-            // Ekstrak data GEOMETRY menjadi string WKT (Well-Known Text) menggunakan PostGIS
+            // ekstrak data GEOMETRY menjadi string WKT (Well-Known Text) menggunakan PostGIS
             $areaData = DB::selectOne(
                 "SELECT ST_AsText(area) as wkt FROM attendance_zones WHERE id = ?",
                 [$zone->id]
@@ -51,8 +47,8 @@ class AttendanceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'name'    => $zone->name, // Contoh: "HR" atau "Marketing"
-                'area'    => $areaData->wkt, // Contoh: "POLYGON((106... -6...))"
+                'name'    => $zone->name,
+                'area'    => $areaData->wkt,
             ]);
 
         } catch (\Exception $e) {
@@ -63,12 +59,9 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Merekam absensi masuk (Check-In).
-     */
     public function checkIn(Request $request)
     {
-        // 1. Validasi input (Tambahkan validasi untuk foto)
+        // validasi input
         $validator = Validator::make($request->all(), [
             'latitude'  => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
@@ -83,7 +76,7 @@ class AttendanceController extends Controller
         }
 
         try {
-            // 2. Panggil validasi lokasi
+            // panggil validasi lokasi
             $isValidLocation = $this->validateLocation(
                 $request->user(),
                 $request->latitude,
@@ -91,20 +84,16 @@ class AttendanceController extends Controller
             );
 
             if ($isValidLocation) {
-                // 3. Proses simpan file foto ke server (storage/app/public/attendances)
                 $photoPath = null;
                 if ($request->hasFile('photo')) {
-                    // Menyimpan file dan mengembalikan path-nya (misal: "attendances/xyz.jpg")
                     $photoPath = $request->file('photo')->store('attendances', 'public');
                 }
 
-                // 4. Simpan record absensi check-in
                 $checkInTime = now();
                 $workStart = \Carbon\Carbon::today()->setTime(9, 0, 0);
 
                 $today = Carbon::today()->toDateString();
 
-                // status: hadir / telat
                 $status = $checkInTime->gt($workStart) ? 'Telat' : 'Hadir';
 
                 $attendance = Attendance::create([
@@ -115,10 +104,6 @@ class AttendanceController extends Controller
                     'check_in_latitude'     => $request->latitude,
                     'check_in_longitude'    => $request->longitude,
                     'check_in_photo_path'   => $photoPath,
-                    'check_out'             => null,
-                    'check_out_latitude'    => null,
-                    'check_out_longitude'   => null,
-                    'check_out_photo_path'  => null,
                     'status'                => $status,
                     'source'                => 'Mobile',
                 ]);
@@ -129,7 +114,6 @@ class AttendanceController extends Controller
                     'data' => $attendance,
                 ]);
             } else {
-                // LOKASI TIDAK VALID
                 return response()->json([
                     'success' => false,
                     'message' => 'Anda berada di luar area absensi.',
@@ -137,7 +121,6 @@ class AttendanceController extends Controller
                 ], 422);
             }
         } catch (\Exception $e) {
-            // 5. Tangani error
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -145,12 +128,9 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Merekam absensi keluar (Check-Out).
-     */
     public function checkOut(Request $request)
     {
-        // 1. Validasi input
+        // validasi input
         $validator = Validator::make($request->all(), [
             'latitude'  => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
@@ -165,7 +145,7 @@ class AttendanceController extends Controller
         }
 
         try {
-            // 2. Panggil validasi lokasi
+            // panggil validasi lokasi
             $isValidLocation = $this->validateLocation(
                 $request->user(),
                 $request->latitude,
@@ -173,20 +153,16 @@ class AttendanceController extends Controller
             );
 
             if ($isValidLocation) {
-                // LOKASI VALID
-                // 3. Ambil absensi hari ini
                 $attendance = Attendance::where('employee_id', $request->user()->employee->id)
                     ->whereDate('check_in', today())
                     ->firstOrFail();
 
-                // 4. Proses simpan file foto ke server (storage/app/public/attendances)
                 $photoPath = null;
                 if ($request->hasFile('photo')) {
-                    // Menyimpan file dan mengembalikan path-nya
                     $photoPath = $request->file('photo')->store('attendances', 'public');
                 }
 
-                // 5. Update record absensi check-out
+                // update absensi check-out
                 $attendance->update([
                     'check_out'             => now() ?? 'N/A',
                     'check_out_latitude'    => $request->latitude,
@@ -200,7 +176,6 @@ class AttendanceController extends Controller
                     'data' => $attendance,
                 ]);
             } else {
-                // LOKASI TIDAK VALID
                 return response()->json([
                     'success' => false,
                     'message' => 'Anda berada di luar area absensi.',
@@ -213,7 +188,6 @@ class AttendanceController extends Controller
                 'message' => 'Anda belum melakukan check-in hari ini.'
             ], 404);
         } catch (\Exception $e) {
-            // Tangani error umum lainnya
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan sistem: ' . $e->getMessage()
@@ -233,12 +207,10 @@ class AttendanceController extends Controller
      */
     private function validateLocation(User $user, float $latitude, float $longitude): bool
     {
-        // 1. Ambil data berantai: User -> Employee -> Department -> Zones
         $user->loadMissing('employee.department.attendanceZones');
-
         $employee = $user->employee;
 
-        // 2. Validasi apakah user punya profil & departemen
+        // validasi apakah user punya profil & departemen
         if (!$employee) {
             throw new \Exception('Profil karyawan tidak ditemukan.');
         }
@@ -247,17 +219,14 @@ class AttendanceController extends Controller
             throw new \Exception('Karyawan tidak terdaftar di departemen manapun.');
         }
 
-        // 3. Ambil ID zona yang valid
+        // ambil ID zona yang valid
         $validZoneIds = $employee->department->attendanceZones->pluck('id');
 
         if ($validZoneIds->isEmpty()) {
             throw new \Exception('Departemen Anda tidak memiliki zona absensi.');
         }
 
-        // 4. Validasi menggunakan ST_DWithin (Toleransi Hybrid Radius & Polygon)
-        // area::geography -> mengubah polygon menjadi hitungan meter
-        // ST_MakePoint diubah ke geography -> agar titik GPS juga dihitung dalam meter
-        // Angka 10 di belakang adalah radius toleransi dalam meter
+        // cek apakah koordinat user berada dalam radius 10 meter dari salah satu zona yang valid
         return AttendanceZone::whereIn('id', $validZoneIds)
             ->whereRaw(
                 'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 10)',
@@ -266,12 +235,6 @@ class AttendanceController extends Controller
             ->exists();
     }
 
-    /**
-     * Metode private untuk mendapatkan ID zona absensi berdasarkan user.
-     *
-     * @param \App\Models\User $user
-     * @return int|null
-     */
     private function getZoneId(User $user): ?int
     {
         $employee = $user->employee;
@@ -279,9 +242,6 @@ class AttendanceController extends Controller
         return $employee->department->attendanceZones->first()->id ?? null;
     }
 
-    /**
-     * Cek status absensi hari ini.
-     */
     public function getTodayStatus(Request $request)
     {
         try {
@@ -294,14 +254,14 @@ class AttendanceController extends Controller
                     'success' => true,
                     'has_checked_in'  => true,
 
-                    // FIXED: Added ->timezone('Asia/Jakarta') to convert UTC to WIB
+                    // convert UTC to WIB
                     'check_in_time'   => \Carbon\Carbon::parse($attendance->check_in)
                                             ->timezone('Asia/Jakarta')
                                             ->format('H : i : s'),
 
                     'has_checked_out' => $attendance->check_out !== null,
 
-                    // FIXED: Added ->timezone('Asia/Jakarta') here as well
+                    // convert UTC to WIB
                     'check_out_time'  => $attendance->check_out
                                             ? \Carbon\Carbon::parse($attendance->check_out)
                                                 ->timezone('Asia/Jakarta')
@@ -323,9 +283,6 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Get monthly attendance statistics for the user.
-     */
     public function getMonthlyStats(Request $request)
     {
         try {
@@ -333,23 +290,18 @@ class AttendanceController extends Controller
             $currentMonth = \Carbon\Carbon::now()->month;
             $currentYear = \Carbon\Carbon::now()->year;
 
-            // 1. Total Present (Count records where check_in is not null this month)
             $totalAttendance = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('check_in', $currentMonth)
                 ->whereYear('check_in', $currentYear)
                 ->whereNotNull('check_in')
                 ->count();
 
-            // 2. Late Clock In (Assuming late is after 09:00:00)
             $lateClockIn = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('check_in', $currentMonth)
                 ->whereYear('check_in', $currentYear)
                 ->whereTime('check_in', '>', '09:00:00')
                 ->count();
 
-            // 3. No Clock In (This depends on your DB logic. If you generate empty rows
-            // for absences, check for null check_ins. Otherwise, this might query an 'absences' table).
-            // Example:
             $noClockIn = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('date', $currentMonth)
                 ->whereYear('date', $currentYear)
@@ -370,9 +322,7 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Get recent attendance history for the home screen.
-     */
+    // history presensi di home screen
     public function getHistory(Request $request)
     {
         try {
@@ -415,9 +365,7 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Get full monthly report (Stats + History) based on filter.
-     */
+    // laporan bulanan lengkap untuk halaman laporan
     public function getMonthlyReport(Request $request)
     {
         try {
@@ -426,14 +374,12 @@ class AttendanceController extends Controller
             $month = $request->query('month', \Carbon\Carbon::now()->month);
             $year = $request->query('year', \Carbon\Carbon::now()->year);
 
-            // 1. Calculate Stats for this specific month/year
             $totalAttendance = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('date', $month)
                 ->whereYear('date', $year)
                 ->whereNotNull('check_in')
                 ->count();
 
-            // 🔥 PERBAIKAN: Gunakan kolom 'date' & pastikan 'check_in' tidak null
             $lateClockIn = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('date', $month)
                 ->whereYear('date', $year)
@@ -441,46 +387,35 @@ class AttendanceController extends Controller
                 ->whereTime('check_in', '>', '09:00:00')
                 ->count();
 
-            // 🔥 PERBAIKAN: Gunakan kolom 'date', bukan 'created_at'
             $noClockIn = Attendance::where('employee_id', $employeeId)
                 ->whereMonth('date', $month)
                 ->whereYear('date', $year)
                 ->whereNull('check_in')
                 ->count();
 
-            // 2. Fetch Full History for the calendar & list
             $attendances = Attendance::where('employee_id', $employeeId)
-                ->whereMonth('date', $month) // 🔥 Filter berdasarkan tanggal asli!
+                ->whereMonth('date', $month)
                 ->whereYear('date', $year)
-                ->orderBy('date', 'desc')    // 🔥 Urutkan berdasarkan tanggal asli!
+                ->orderBy('date', 'desc')
                 ->get()
                 ->map(function ($att) {
-                    // 🔥 PERBAIKAN: Ambil patokan tanggal murni dari database
                     $actualDate = \Carbon\Carbon::parse($att->date)->timezone('Asia/Jakarta');
-
-                    // 🔥 PERBAIKAN: Cegah Carbon Trap! Hanya parse waktu jika datanya tidak null
                     $checkInTime = $att->check_in ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta') : null;
                     $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
-
-                    // DYNAMIC STATUS CALCULATION
                     $status = ucfirst($att->status ?? 'Absent');
-
-                    // If they actually clocked in AND strictly after 09:00:00, force status to 'Telat'
                     if ($checkInTime && $checkInTime->format('H : i : s') > '09:00:00') {
                         $status = 'Telat';
                     }
 
                     return [
-                        'raw_date'  => $actualDate->format('Y-m-d'), // Dibutuhkan Flutter untuk fitur kalender
+                        'raw_date'  => $actualDate->format('Y-m-d'),
                         'date'      => $actualDate->translatedFormat('j F Y'),
                         'status'    => $status,
-                        // Jika null, kirim null bulat-bulat agar Flutter menuliskannya 'N/A'
                         'check_in'  => $checkInTime ? $checkInTime->format('H : i : s') : null,
                         'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : null,
                     ];
                 });
 
-            // 3. Return everything together!
             return response()->json([
                 'success' => true,
                 'stats' => [
@@ -498,16 +433,12 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-        * Get attendance records of a specific employee (for Heads to view their members).
-        * This method is protected by the EmployeeAttendancePolicy.
-    */
+    // fitur tambahan untuk atasan melihat laporan anggota di departemennya
     public function getMemberAttendances(Request $request, $employeeId)
     {
         $employeeToView = \App\Models\Employee::findOrFail($employeeId);
         $authUserEmployee = $request->user()->employee;
 
-        // 1. Pengecekan Akses (Policy)
         if ($request->user()->cannot('viewMemberAttendances', $employeeToView)) {
             return response()->json([
                 'message' => 'Unauthorized',
@@ -519,24 +450,15 @@ class AttendanceController extends Controller
             ], 403);
         }
 
-        // 2. Mulai menyusun Query
         $query = $employeeToView->attendances();
-
-        // 3. Logika Filter
         if ($request->has('month') && $request->has('year')) {
-            // JIKA ADA FILTER DARI FLUTTER: Ambil bulan & tahun spesifik
             $query->whereMonth('date', $request->month)
                   ->whereYear('date', $request->year);
         } else {
-            // JIKA TIDAK ADA FILTER (INITIAL LOAD): Ambil 2 bulan terakhir
-            // subMonths(1)->startOfMonth() berarti mengambil dari awal bulan lalu sampai hari ini.
-            // Contoh: Jika sekarang bulan Mei, maka akan mengambil data dari 1 April sampai hari ini.
             $twoMonthsAgo = \Carbon\Carbon::now()->subMonths(1)->startOfMonth();
             $query->where('date', '>=', $twoMonthsAgo);
         }
 
-        // 4. Eksekusi Query dan urutkan dari yang terbaru
-        // Disarankan menggunakan kolom 'date' dibanding 'created_at' untuk presensi
         $attendances = $query->orderBy('date', 'desc')->get();
 
         return response()->json(['data' => $attendances]);

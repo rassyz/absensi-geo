@@ -11,9 +11,6 @@ use Illuminate\Support\Facades\Validator;
 
 class OvertimeController extends Controller
 {
-    /**
-     * 1. Mengambil Daftar Tugas Lembur untuk Karyawan (Hari Ini & Mendatang)
-     */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -51,12 +48,8 @@ class OvertimeController extends Controller
         ]);
     }
 
-    /**
-     * 2. Clock-In Lembur (Masuk Lembur)
-     */
     public function clockIn(Request $request)
     {
-        // 1. Validasi Input
         $validator = Validator::make($request->all(), [
             'overtime_id' => 'required|exists:overtimes,id',
             'latitude'    => 'required|numeric|between:-90,90',
@@ -74,7 +67,6 @@ class OvertimeController extends Controller
             $user = $request->user();
             $employee = $user->employee;
 
-            // 2. Validasi Lokasi menggunakan Geofencing PostGIS
             $isValidLocation = $this->validateLocation(
                 $user,
                 $request->latitude,
@@ -89,18 +81,15 @@ class OvertimeController extends Controller
                 ], 422);
             }
 
-            // 3. Cek apakah karyawan ditugaskan
             $overtime = $employee->overtimes()->where('overtimes.id', $request->overtime_id)->first();
             if (!$overtime) {
                 return response()->json(['success' => false, 'message' => 'Anda tidak ditugaskan untuk lembur ini.'], 403);
             }
 
-            // 4. Cek apakah sudah clock-in
             if ($overtime->pivot->check_in) {
                 return response()->json(['success' => false, 'message' => 'Anda sudah melakukan clock-in lembur.'], 400);
             }
 
-            // 5. Update pivot table
             $employee->overtimes()->updateExistingPivot($overtime->id, [
                 'check_in' => Carbon::now(),
                 'check_in_latitude' => $request->latitude,
@@ -121,12 +110,8 @@ class OvertimeController extends Controller
         }
     }
 
-    /**
-     * 3. Clock-Out Lembur (Selesai Lembur)
-     */
     public function clockOut(Request $request)
     {
-        // 1. Validasi Input
         $validator = Validator::make($request->all(), [
             'overtime_id' => 'required|exists:overtimes,id',
             'latitude'    => 'required|numeric|between:-90,90',
@@ -144,7 +129,6 @@ class OvertimeController extends Controller
             $user = $request->user();
             $employee = $user->employee;
 
-            // 2. Validasi Lokasi menggunakan Geofencing PostGIS
             $isValidLocation = $this->validateLocation(
                 $user,
                 $request->latitude,
@@ -159,10 +143,8 @@ class OvertimeController extends Controller
                 ], 422);
             }
 
-            // 3. Cari data lembur
             $overtime = $employee->overtimes()->where('overtimes.id', $request->overtime_id)->first();
 
-            // 4. Validasi alur absensi
             if (!$overtime || !$overtime->pivot->check_in) {
                 return response()->json(['success' => false, 'message' => 'Anda belum melakukan clock-in lembur.'], 400);
             }
@@ -171,7 +153,6 @@ class OvertimeController extends Controller
                 return response()->json(['success' => false, 'message' => 'Anda sudah melakukan clock-out lembur.'], 400);
             }
 
-            // 5. Update pivot table
             $employee->overtimes()->updateExistingPivot($overtime->id, [
                 'check_out' => Carbon::now(),
                 'check_out_latitude' => $request->latitude,
@@ -192,9 +173,6 @@ class OvertimeController extends Controller
         }
     }
 
-    /**
-     * Metode private untuk memvalidasi lokasi user (Sama persis dengan AttendanceController).
-     */
     private function validateLocation(User $user, float $latitude, float $longitude): bool
     {
         $user->loadMissing('employee.department.attendanceZones');
@@ -215,7 +193,6 @@ class OvertimeController extends Controller
             throw new \Exception('Departemen Anda tidak memiliki zona absensi.');
         }
 
-        // Buat Titik (POINT) PostGIS dari lokasi user
         return AttendanceZone::whereIn('id', $validZoneIds)
             ->whereRaw(
                 'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 10)',

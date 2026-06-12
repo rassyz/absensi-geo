@@ -11,21 +11,18 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        // validasi input
         $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        // buat user baru
         $user = User::create([
             'name' => $validatedData['name'],
             'email' => $validatedData['email'],
             'password' => Hash::make($validatedData['password']),
         ]);
 
-        // respons
         return response()->json([
             'message' => 'Registrasi Berhasil',
             'user' => $user,
@@ -39,10 +36,8 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        // cari user berdasarkan email
         $user = User::with('employee.department')->where('email', $request->email)->first();
 
-        // periksa password
         if (! $user || ! Hash::check($request->password, $user->password)) {
             return response()->json([
                 'message' => 'Email atau Password salah',
@@ -52,19 +47,11 @@ class AuthController extends Controller
         // buat token API
         $token = $user->createToken('login-token')->plainTextToken;
 
-        // 👇 PERUBAHAN FINAL: Fokus hanya pada tabel user 👇
         $userData = $user->toArray();
-
-        // Ambil URL dasar dari .env untuk memastikan URL gambar benar
         $mobileBaseUrl = config('app.url');
-
-        // Rakit URL secara manual tanpa menggunakan fungsi asset()
         $userData['avatar_url'] = $user->avatar_url
             ? $mobileBaseUrl . '/storage/' . $user->avatar_url
             : null;
-
-        // MASUKKAN URL GAMBAR INTERNET SECARA PAKSA (HARDCODE)
-        // $userData['avatar_url'] = "https://picsum.photos/200";
 
         return response()->json([
             'message' => 'Login Berhasil',
@@ -96,7 +83,6 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        // hapus token yang digunakan untuk autentikasi saat ini
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
