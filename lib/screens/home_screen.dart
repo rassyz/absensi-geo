@@ -801,16 +801,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Color _getSemanticColor(String? status) {
     if (status == null) {
-      return AppColors.tertiary[500]!; // Diperbarui pakai Coral Red
+      return AppColors.tertiary[500]!;
     }
 
     String s = status.toLowerCase();
     if (s.contains('hadir') || s.contains('reguler') || s.contains('present')) {
       return AppColors.primary[500]!;
     } else if (s.contains('telat') || s.contains('late')) {
-      return AppColors.secondary[500]!; // Diperbarui pakai Lime Green
+      return AppColors.secondary[500]!;
     } else if (s.contains('cuti') || s.contains('leave')) {
-      return Colors.orange[500]!; // Warna Oranye untuk status Cuti
+      return Colors.orange[500]!;
     } else {
       return AppColors.tertiary[500]!;
     }

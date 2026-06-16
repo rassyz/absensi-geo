@@ -88,17 +88,15 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // logout method
   Future<void> logout() async {
-    // 1. Get the token from the current user object before we wipe it
-    final token = _user?.token;
+    final token = await authService.getToken();
 
-    if (token != null) {
-      // 2. Call the API to delete the token from the database
+    if (token != null && token.isNotEmpty) {
       await authService.logout(token);
+    } else {
+      await authService.clearToken();
     }
 
-    // 3. Reset the local state
     _user = null;
     notifyListeners();
   }
@@ -112,6 +110,32 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       _errorMessage = e.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<bool> restoreSession() async {
+    _isLoading = true;
+    _errorMessage = '';
+    notifyListeners();
+
+    try {
+      final result = await authService.restoreSession();
+
+      if (result != null) {
+        _user = result;
+        return true;
+      }
+
+      _user = null;
+      return false;
+    } catch (e) {
+      _user = null;
+      _errorMessage = e.toString();
+      await authService.clearToken();
+      return false;
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }

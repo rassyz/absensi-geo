@@ -67,9 +67,10 @@ class AuthService extends BaseApiService {
         headers: await getHeaders(token),
       );
 
-      await clearToken(); // Uses BaseApiService method
+      await clearToken();
       return response.statusCode == 200;
     } catch (e) {
+      await clearToken();
       debugPrint("Logout API Error: $e");
       return false;
     }
@@ -84,5 +85,31 @@ class AuthService extends BaseApiService {
     } else {
       throw Exception("Failed to fetch user profile: ${response.body}");
     }
+  }
+
+  Future<UserModel?> restoreSession() async {
+    final token = await getToken();
+
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    final response = await http.get(
+      Uri.parse("${BaseApiService.baseUrl}/user"),
+      headers: await getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      return UserModel.fromJson({'token': token, 'user': data['user'] ?? data});
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await clearToken();
+      return null;
+    }
+
+    return null;
   }
 }

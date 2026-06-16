@@ -127,7 +127,7 @@ final class AdminPanelProvider extends PanelProvider
                     ->navigationSort(4)
                     ->navigationIcon(Phosphor::FileArchiveDuotone),
                 FilamentDeveloperLoginsPlugin::make()
-                    ->enabled(app()->environment('local'))
+                    ->enabled(false)
                     ->switchable(true)
                     ->users(fn () => User::pluck('email', 'name')->toArray()),
                 ApiServicePlugin::make(),

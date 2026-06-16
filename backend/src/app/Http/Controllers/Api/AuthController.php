@@ -60,6 +60,24 @@ class AuthController extends Controller
         ]);
     }
 
+    public function me(Request $request)
+    {
+        $user = $request->user()->load('employee.department');
+
+        $userData = $user->toArray();
+
+        $mobileBaseUrl = config('app.url');
+
+        $userData['avatar_url'] = $user->avatar_url
+            ? $mobileBaseUrl . '/storage/' . $user->avatar_url
+            : null;
+
+        return response()->json([
+            'message' => 'User profile berhasil diambil',
+            'user' => $userData,
+        ]);
+    }
+
     // logout paksa
     // public function logout($userId)
     // {

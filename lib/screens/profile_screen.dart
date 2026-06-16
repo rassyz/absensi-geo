@@ -72,23 +72,18 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Ambil data user secara dinamis
     final authProvider = Provider.of<AuthProvider>(context);
     final employee = authProvider.user?.employee;
 
-    // 1. Ekstrak Nama
     final String userName =
         employee?.fullName ?? authProvider.user?.name ?? "Michael Mitc";
 
-    // 👇 2. LOGIKA DEPARTMENT - POSITION 👇
-    // Pastikan property 'department' dan 'position' sudah ada di model Employee Anda
     final String dept = employee?.departmentName ?? "";
     final String pos = employee?.position ?? "";
 
     final String role = (dept.isNotEmpty && pos.isNotEmpty)
         ? "$dept - $pos"
         : (pos.isNotEmpty ? pos : (dept.isNotEmpty ? dept : "Tidak Diketahui"));
-    // 👆 SELESAI LOGIKA JABATAN 👆
 
     final String? avatarUrl = authProvider.user?.avatarUrl;
 
@@ -233,7 +228,6 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
-            // Menu Logout Spesial (Merah)
             _buildMenuItem(
               icon: Icons.logout,
               title: 'Keluar',
