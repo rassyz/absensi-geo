@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/employee_service.dart';
+import '../core/utils/app_logger.dart';
 
 class EmployeeProvider with ChangeNotifier {
   final EmployeeService _service = EmployeeService();
@@ -24,7 +25,7 @@ class EmployeeProvider with ChangeNotifier {
     try {
       _teamMembers = await _service.fetchTeamMembers();
     } catch (e) {
-      debugPrint("Error Provider Teams: $e");
+      AppLogger.error('Error Provider Teams', error: e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -47,7 +48,7 @@ class EmployeeProvider with ChangeNotifier {
       );
       _memberAttendances[employeeId] = data;
     } catch (e) {
-      debugPrint("Error Provider Attendance: $e");
+      AppLogger.error('Error Provider Attendance', error: e);
     } finally {
       _isLoadingAttendances = false;
       notifyListeners(); // Matikan loading

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/leave_service.dart';
+import '../core/utils/app_logger.dart';
 
 class LeaveProvider extends ChangeNotifier {
   final LeaveService _service = LeaveService();
@@ -44,7 +45,7 @@ class LeaveProvider extends ChangeNotifier {
         isLoaded = true;
       }
     } catch (e) {
-      debugPrint('Error fetching leave data: $e');
+      AppLogger.error('Error fetching leave data', error: e);
     } finally {
       isFetching = false;
       notifyListeners(); // Update UI
@@ -68,7 +69,7 @@ class LeaveProvider extends ChangeNotifier {
         isTypesLoaded = true;
       }
     } catch (e) {
-      debugPrint('Error fetching leave types: $e');
+      AppLogger.error('Error fetching leave types', error: e);
     } finally {
       isFetchingTypes = false;
       notifyListeners();

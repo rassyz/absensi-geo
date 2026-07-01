@@ -19,7 +19,6 @@ class EmployeeEvaluationService
 
         foreach ($employees as $employee) {
 
-            // 🔥 SINGLE DATASET (IMPORTANT)
             $attendances = Attendance::where('employee_id', $employee->id)
                 ->where(function ($q) use ($month, $year) {
                     $q->whereMonth('check_in', $month)
@@ -52,7 +51,7 @@ class EmployeeEvaluationService
                 $workStart = $dateCarbon->copy()->setTime(9, 0, 0);
                 $workEnd   = $dateCarbon->copy()->setTime(17, 0, 0);
 
-                // 🔥 pick valid check-in record
+                // pick valid check-in record
                 $att = $records->firstWhere('check_in', '!=', null);
 
                 if ($att) {
@@ -93,10 +92,7 @@ class EmployeeEvaluationService
             ];
         }
 
-        // ======================
-        // 🔥 SAW CALCULATION (IMPROVED)
-        // ======================
-
+        // SAW CALCULATION
         $maxAttendance = collect($results)->max('attendance') ?: 1;
 
         $maxLate = max(collect($results)->max('late'), 1);
@@ -121,7 +117,7 @@ class EmployeeEvaluationService
 
             $r['score'] = $score;
 
-            // softer business rule
+            // aturan bisnis
             if ($r['alpha'] >= 3) {
                 $r['status'] = 'pembinaan';
             } elseif ($score >= 0.85) {
@@ -133,10 +129,7 @@ class EmployeeEvaluationService
             }
         }
 
-        // ======================
         // 💾 SAVE
-        // ======================
-
         DB::transaction(function () use ($results, $month, $year) {
 
             EmployeeEvaluation::where('month', $month)
@@ -160,9 +153,7 @@ class EmployeeEvaluationService
         });
     }
 
-    // ======================
-    // 🔥 HELPER: WORKING DAYS
-    // ======================
+    // HELPER: WORKING DAYS
     private function getWorkingDays($month, $year)
     {
         $start = Carbon::create($year, $month, 1);

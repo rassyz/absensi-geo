@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/overtime_model.dart';
 import '../services/overtime_service.dart';
+import '../core/utils/app_logger.dart';
 
 class OvertimeProvider extends ChangeNotifier {
   final OvertimeService _service = OvertimeService();
@@ -54,7 +55,7 @@ class OvertimeProvider extends ChangeNotifier {
         isLoaded = true;
       }
     } catch (e) {
-      debugPrint('Error fetching overtime in provider: $e');
+      AppLogger.error('Error fetching overtime in provider', error: e);
     } finally {
       isFetching = false;
       notifyListeners();

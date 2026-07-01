@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:io';
+import '../core/utils/app_logger.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -51,7 +52,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     try {
       await _getUserLocation();
     } catch (e) {
-      debugPrint("GPS Error: $e");
+      AppLogger.error('GPS Error', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -66,7 +67,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     try {
       await _fetchAttendanceZone();
     } catch (e) {
-      debugPrint("API Zone Error: $e");
+      AppLogger.error('API Zone Error', error: e);
     }
 
     if (mounted) {
@@ -106,41 +107,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _getUserLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    final Position position = await _getFreshValidPosition();
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) throw Exception('Location services are disabled.');
+    if (!mounted) return;
 
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        throw Exception('Location permissions are denied');
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      throw Exception('Location permissions are permanently denied.');
-    }
-
-    Position position = await Geolocator.getCurrentPosition(
-      // ignore: deprecated_member_use
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    // fake GPS detection
-    if (position.isMocked) {
-      throw Exception(
-        'Terdeteksi penggunaan aplikasi Fake GPS / Mock Location! Harap matikan untuk menggunakan aplikasi.',
-      );
-    }
-
-    if (mounted) {
-      setState(() {
-        _userLocation = LatLng(position.latitude, position.longitude);
-      });
-    }
+    setState(() {
+      _userLocation = LatLng(position.latitude, position.longitude);
+    });
   }
 
   Future<void> _fetchAttendanceZone() async {
@@ -160,42 +133,44 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Future<void> _processAttendance(String token) async {
-    // Sebelum membuka kamera, cek lokasi real-time untuk deteksi fake GPS
-    try {
-      Position currentPosition = await Geolocator.getCurrentPosition(
-        // ignore: deprecated_member_use
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      if (currentPosition.isMocked) {
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              "Gagal: Fake GPS terdeteksi saat percobaan presensi!",
-            ),
-            backgroundColor:
-                AppColors.tertiary[500], // Warna merah dari theme Anda
-          ),
-        );
-        return; // Hentikan proses secara total, jangan buka kamera
-      }
-    } catch (e) {
-      debugPrint("Gagal mengecek lokasi real-time: $e");
-    }
-
-    if (_userLocation == null) {
-      // ignore: use_build_context_synchronously
+    if (token.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Waiting for GPS location..."),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: const Text(
+            'Sesi login tidak ditemukan. Silakan login ulang.',
+          ),
+          backgroundColor: AppColors.tertiary[500],
         ),
       );
       return;
     }
 
-    bool isCheckIn = !_hasCheckedIn;
+    Position latestPosition;
+
+    try {
+      latestPosition = await _getFreshValidPosition();
+
+      if (!mounted) return;
+
+      setState(() {
+        _userLocation = LatLng(
+          latestPosition.latitude,
+          latestPosition.longitude,
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppColors.tertiary[500],
+        ),
+      );
+      return;
+    }
+
+    final bool isCheckIn = !_hasCheckedIn;
 
     final XFile? photo = await _picker.pickImage(
       source: ImageSource.camera,
@@ -204,23 +179,51 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       maxHeight: 1080,
     );
 
-    if (photo != null) {
+    if (photo == null) {
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _capturedImage = File(photo.path);
+    });
+
+    try {
+      latestPosition = await _getFreshValidPosition();
+
       if (!mounted) return;
+
       setState(() {
-        _capturedImage = File(photo.path);
+        _userLocation = LatLng(
+          latestPosition.latitude,
+          latestPosition.longitude,
+        );
       });
+    } catch (e) {
+      if (!mounted) return;
 
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppColors.tertiary[500],
+        ),
       );
+      return;
+    }
 
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
       final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,
-        latitude: _userLocation!.latitude,
-        longitude: _userLocation!.longitude,
+        latitude: latestPosition.latitude,
+        longitude: latestPosition.longitude,
         isCheckIn: isCheckIn,
       );
 
@@ -230,9 +233,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       if (result['success'] == true) {
         setState(() {
-          String currentTime = DateFormat(
+          final String currentTime = DateFormat(
             'HH : mm : ss',
           ).format(DateTime.now());
+
           if (isCheckIn) {
             _hasCheckedIn = true;
             _checkInTime = currentTime;
@@ -250,10 +254,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? "Status unknown"),
+          content: Text(result['message'] ?? 'Status tidak diketahui.'),
           backgroundColor: result['success'] == true
               ? AppColors.secondary[500]
               : AppColors.tertiary[500],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppColors.tertiary[500],
         ),
       );
     }
@@ -274,7 +289,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _mapController.move(_userLocation!, 17.0);
       }
     } catch (e) {
-      debugPrint("Recenter Error: $e");
+      AppLogger.error('Recenter Error', error: e);
     }
   }
 
@@ -755,7 +770,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
       }
     } catch (e) {
-      debugPrint("Error parsing polygon: $e");
+      AppLogger.error('Error parsing polygon', error: e);
     }
     return points;
   }
@@ -769,6 +784,47 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       lngSum += p.longitude;
     }
     return LatLng(latSum / points.length, lngSum / points.length);
+  }
+
+  Future<Position> _getFreshValidPosition() async {
+    final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      throw Exception(
+        'Layanan lokasi sedang tidak aktif. Aktifkan GPS terlebih dahulu.',
+      );
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+
+      if (permission == LocationPermission.denied) {
+        throw Exception(
+          'Izin lokasi ditolak. Aplikasi membutuhkan akses lokasi untuk presensi.',
+        );
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception(
+        'Izin lokasi ditolak permanen. Aktifkan izin lokasi melalui pengaturan aplikasi.',
+      );
+    }
+
+    final Position position = await Geolocator.getCurrentPosition(
+      // ignore: deprecated_member_use
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    if (position.isMocked) {
+      throw Exception(
+        'Terdeteksi penggunaan Fake GPS / Mock Location. Matikan aplikasi Fake GPS untuk melakukan presensi.',
+      );
+    }
+
+    return position;
   }
 }
 

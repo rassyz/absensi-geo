@@ -1,36 +1,25 @@
 // lib/services/attendance_service.dart
 
-import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+
+import 'api_exception.dart';
 import 'base_api_service.dart';
 
 class AttendanceService extends BaseApiService {
-  /// Fetches the attendance zone polygon for the logged-in user's department
+  /// Mengambil data zona presensi polygon berdasarkan departemen user login.
   Future<Map<String, dynamic>?> getUserAttendanceZone(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${BaseApiService.baseUrl}/attendance/zone'),
-        headers: await getHeaders(token),
-      );
+    final data = await getJson('/attendance/zone', token: token);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return {'name': data['name'], 'area': data['area']};
-        }
-      } else {
-        debugPrint("Failed to fetch zone. Status: ${response.statusCode}");
-      }
-      return null;
-    } catch (e) {
-      debugPrint("API Error fetching attendance zone: $e");
-      return null;
+    final responseData = _asMap(data);
+
+    if (responseData['success'] == true) {
+      return {'name': responseData['name'], 'area': responseData['area']};
     }
+
+    return null;
   }
 
-  /// Submits the attendance (Check-In / Check-Out) with a photo and GPS coordinates
+  /// Mengirim presensi masuk atau keluar dengan foto dan koordinat GPS.
   Future<Map<String, dynamic>> submitAttendance({
     required String token,
     required File photo,
@@ -38,151 +27,90 @@ class AttendanceService extends BaseApiService {
     required double longitude,
     required bool isCheckIn,
   }) async {
-    try {
-      final endpoint = isCheckIn
-          ? '/attendance/check-in'
-          : '/attendance/check-out';
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${BaseApiService.baseUrl}$endpoint'),
-      );
+    final endpoint = isCheckIn
+        ? '/attendance/check-in'
+        : '/attendance/check-out';
 
-      // We manually build headers here because MultipartRequest handles Content-Type differently
-      request.headers.addAll({
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      });
+    final data = await postMultipart(
+      endpoint,
+      token: token,
+      fields: {
+        'latitude': latitude.toString(),
+        'longitude': longitude.toString(),
+      },
+      files: {'photo': photo},
+    );
 
-      request.fields['latitude'] = latitude.toString();
-      request.fields['longitude'] = longitude.toString();
-      request.files.add(await http.MultipartFile.fromPath('photo', photo.path));
+    final responseData = _asMap(data);
 
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      // print("RAW LARAVEL RESPONSE: ${response.body}");
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        return {
-          'success': true,
-          'message': responseData['message'] ?? 'Success',
-        };
-      } else {
-        final errorData = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': errorData['message'] ?? 'Failed to submit attendance',
-        };
-      }
-    } catch (e) {
-      debugPrint("API Error submitting attendance: $e");
-      return {'success': false, 'message': 'Network error: Please try again.'};
-    }
+    return {
+      'success': true,
+      'message': responseData['message']?.toString() ?? 'Presensi berhasil.',
+      'data': responseData,
+    };
   }
 
-  /// Fetches the user's attendance status for the current day
+  /// Mengambil status presensi user pada hari berjalan.
   Future<Map<String, dynamic>?> getTodayAttendanceStatus(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${BaseApiService.baseUrl}/attendance/today'),
-        headers: await getHeaders(token),
-      );
+    final data = await getJson('/attendance/today', token: token);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return null;
-    } catch (e) {
-      debugPrint("API Error fetching today's status: $e");
-      return null;
-    }
+    return _asMap(data);
   }
 
-  /// Fetches the user's monthly attendance statistics
+  /// Mengambil statistik presensi bulanan user.
   Future<Map<String, dynamic>?> getMonthlyStats(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${BaseApiService.baseUrl}/attendance/monthly-stats'),
-        headers: await getHeaders(token),
-      );
+    final data = await getJson('/attendance/monthly-stats', token: token);
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return null;
-    } catch (e) {
-      debugPrint("API Error fetching monthly stats: $e");
-      return null;
-    }
+    return _asMap(data);
   }
 
-  /// Fetches the recent attendance history for the user
+  /// Mengambil riwayat presensi terbaru user.
   Future<List<dynamic>?> getAttendanceHistory(String token) async {
-    try {
-      final response = await http.get(
-        Uri.parse('${BaseApiService.baseUrl}/attendance/history'),
-        headers: await getHeaders(token),
-      );
+    final data = await getJson('/attendance/history', token: token);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data['data'];
-        }
-      }
-      return null;
-    } catch (e) {
-      debugPrint("API Error fetching history: $e");
-      return null;
+    final responseData = _asMap(data);
+
+    if (responseData['success'] == true) {
+      return _asList(responseData['data']);
     }
+
+    return null;
   }
 
-  /// Fetches the full monthly report based on selected dropdown filters
+  /// Mengambil laporan presensi bulanan berdasarkan filter bulan dan tahun.
   Future<Map<String, dynamic>?> getMonthlyReport(
     String token,
     int month,
     int year,
   ) async {
-    try {
-      final response = await http.get(
-        Uri.parse(
-          '${BaseApiService.baseUrl}/attendance/report?month=$month&year=$year',
-        ),
-        headers: await getHeaders(token),
-      );
+    final data = await getJson(
+      '/attendance/report',
+      token: token,
+      queryParameters: {'month': month, 'year': year},
+    );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return data;
-        }
-      }
-      return null;
-    } catch (e) {
-      debugPrint("API Error fetching monthly report: $e");
-      return null;
+    final responseData = _asMap(data);
+
+    if (responseData['success'] == true) {
+      return responseData;
     }
+
+    return null;
   }
 
-  // // Di dalam kelas ApiService atau LeaveService Anda:
-  // Future<Map<String, dynamic>?> getLeaveDashboard(String token) async {
-  //   try {
-  //     final response = await http.get(
-  //       Uri.parse('${BaseApiService.baseUrl}/leaves/dashboard'),
-  //       headers: {
-  //         'Authorization': 'Bearer $token',
-  //         'Accept': 'application/json',
-  //       },
-  //     );
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
 
-  //     if (response.statusCode == 200) {
-  //       return jsonDecode(response.body);
-  //     }
-  //     return null;
-  //   } catch (e) {
-  //     debugPrint("API Error fetching leave dashboard: $e");
-  //     return null;
-  //   }
-  // }
+    throw ApiException('Format response server tidak valid.');
+  }
+
+  List<dynamic> _asList(dynamic data) {
+    if (data is List<dynamic>) {
+      return data;
+    }
+
+    throw ApiException('Format data riwayat presensi tidak valid.');
+  }
 }

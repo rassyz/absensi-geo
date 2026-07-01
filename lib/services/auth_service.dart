@@ -1,34 +1,25 @@
-// lib/services/auth_service.dart
-
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
 import '../models/user_model.dart';
+import 'api_exception.dart';
 import 'base_api_service.dart';
 
 class AuthService extends BaseApiService {
   Future<UserModel?> login(String email, String password) async {
-    final url = Uri.parse("${BaseApiService.baseUrl}/login");
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({'email': email, 'password': password}),
+    final data = await postJson(
+      '/login',
+      useAuth: false,
+      body: {'email': email, 'password': password},
     );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      if (data['token'] != null) {
-        await setToken(data['token']); // Uses BaseApiService method
-        return UserModel.fromJson(data);
-      } else {
-        throw Exception("Token not found in response.");
-      }
-    } else {
-      throw Exception("Auth failed: ${response.body}");
+    final responseData = _asMap(data);
+
+    final token = responseData['token'];
+    if (token == null || token.toString().isEmpty) {
+      throw ApiException('Token tidak ditemukan dari server.');
     }
+
+    await setToken(token.toString());
+
+    return UserModel.fromJson(responseData);
   }
 
   Future<String> register(
@@ -37,54 +28,53 @@ class AuthService extends BaseApiService {
     String password,
     String passwordConfirmation,
   ) async {
-    final url = Uri.parse("${BaseApiService.baseUrl}/register");
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: jsonEncode({
+    final data = await postJson(
+      '/register',
+      useAuth: false,
+      body: {
         'name': name,
         'email': email,
         'password': password,
         'password_confirmation': passwordConfirmation,
-      }),
+      },
     );
 
-    if (response.statusCode == 201) {
-      final data = json.decode(response.body);
-      return data['message'] ?? "Registration successful";
-    } else {
-      throw Exception("Registration failed: ${response.body}");
-    }
+    final responseData = _asMap(data);
+
+    return responseData['message']?.toString() ?? 'Registrasi berhasil.';
   }
 
-  Future<bool> logout(String token) async {
+  Future<bool> logout([String? providedToken]) async {
+    final token = providedToken ?? await getToken();
+
     try {
-      final response = await http.post(
-        Uri.parse('${BaseApiService.baseUrl}/logout'),
-        headers: await getHeaders(token),
-      );
+      if (token != null && token.isNotEmpty) {
+        await postJson('/logout', token: token);
+      }
 
       await clearToken();
-      return response.statusCode == 200;
-    } catch (e) {
+      return true;
+    } catch (_) {
       await clearToken();
-      debugPrint("Logout API Error: $e");
       return false;
     }
   }
 
   Future<UserModel?> getUserProfile() async {
-    final url = Uri.parse("${BaseApiService.baseUrl}/user");
-    final response = await http.get(url, headers: await getHeaders());
+    final token = await getToken();
 
-    if (response.statusCode == 200) {
-      return UserModel.fromJson(json.decode(response.body));
-    } else {
-      throw Exception("Failed to fetch user profile: ${response.body}");
+    if (token == null || token.isEmpty) {
+      return null;
     }
+
+    final data = await getJson('/user', token: token);
+
+    final responseData = _asMap(data);
+
+    return UserModel.fromJson({
+      'token': token,
+      'user': responseData['user'] ?? responseData,
+    });
   }
 
   Future<UserModel?> restoreSession() async {
@@ -94,22 +84,21 @@ class AuthService extends BaseApiService {
       return null;
     }
 
-    final response = await http.get(
-      Uri.parse("${BaseApiService.baseUrl}/user"),
-      headers: await getHeaders(token),
-    );
+    final data = await getJson('/user', token: token);
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+    final responseData = _asMap(data);
 
-      return UserModel.fromJson({'token': token, 'user': data['user'] ?? data});
+    return UserModel.fromJson({
+      'token': token,
+      'user': responseData['user'] ?? responseData,
+    });
+  }
+
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
     }
 
-    if (response.statusCode == 401 || response.statusCode == 403) {
-      await clearToken();
-      return null;
-    }
-
-    return null;
+    throw ApiException('Format response server tidak valid.');
   }
 }

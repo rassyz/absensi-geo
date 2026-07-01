@@ -1,57 +1,32 @@
 // lib/services/leave_service.dart
 
-import 'dart:convert';
-import 'dart:io'; // 👇 Tambahkan import ini untuk menangani File
-import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
-import 'package:absensi_geo/services/base_api_service.dart';
+import 'dart:io';
+
+import 'api_exception.dart';
+import 'base_api_service.dart';
 
 class LeaveService extends BaseApiService {
-  // --- Mengambil Data Master Tipe Cuti ---
-  // Fungsi baru untuk mengisi Dropdown di form pengajuan cuti
+  // Mengambil data master tipe cuti untuk dropdown form pengajuan cuti.
   Future<List<Map<String, dynamic>>?> getLeaveTypes(String token) async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/leave-types');
-      final headers = await getHeaders(token);
+    final data = await getJson('/leave-types', token: token);
 
-      final response = await http.get(url, headers: headers);
+    final responseData = _asMap(data);
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true) {
-          // Konversi data array ke List<Map<String, dynamic>>
-          return List<Map<String, dynamic>>.from(decoded['data']);
-        }
-      }
-      debugPrint('Gagal mengambil tipe cuti: ${response.body}');
-      return null;
-    } catch (e) {
-      debugPrint("Error API Leave Types: $e");
-      return null;
+    if (responseData['success'] == true) {
+      return _asList(responseData['data']).map(_asMap).toList();
     }
+
+    return null;
   }
 
-  // --- Mengambil Data Dashboard Cuti ---
+  // Mengambil data dashboard cuti, seperti daftar cuti user,
   Future<Map<String, dynamic>?> getLeaveDashboard(String token) async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/leaves/dashboard');
-      final headers = await getHeaders(token);
+    final data = await getJson('/leaves/dashboard', token: token);
 
-      final response = await http.get(url, headers: headers);
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        debugPrint('Gagal mengambil data cuti: ${response.body}');
-        return null;
-      }
-    } catch (e) {
-      debugPrint("Error API Cuti: $e");
-      return null;
-    }
+    return _asMap(data);
   }
 
-  // --- Mengirim Pengajuan Cuti Baru (Dengan Attachment) ---
+  // Mengirim pengajuan cuti baru.
   Future<bool> submitLeaveRequest({
     required String token,
     required String leaveTypeId,
@@ -59,86 +34,60 @@ class LeaveService extends BaseApiService {
     required String endDate,
     required int applyDays,
     required String reason,
-    File? attachment, // File dokumen/foto (Opsional)
+    File? attachment,
   }) async {
-    try {
-      // 1. Gunakan baseUrl dari BaseApiService
-      final url = Uri.parse('${BaseApiService.baseUrl}/leaves/apply');
+    await postMultipart(
+      '/leaves/apply',
+      token: token,
+      fields: {
+        'leave_type_id': leaveTypeId,
+        'start_date': startDate,
+        'end_date': endDate,
+        'apply_days': applyDays.toString(),
+        'reason': reason,
+      },
+      files: attachment == null ? null : {'attachment': attachment},
+    );
 
-      // 2. Karena ada file, kita WAJIB menggunakan MultipartRequest (bukan http.post biasa)
-      var request = http.MultipartRequest('POST', url);
-
-      // 3. Ambil headers standar (Authorization & Accept) dari BaseApiService
-      final headers = await getHeaders(token);
-      request.headers.addAll(headers);
-
-      // 4. Masukkan data teks ke dalam request fields
-      request.fields['leave_type_id'] = leaveTypeId.toString();
-      request.fields['start_date'] = startDate;
-      request.fields['end_date'] = endDate;
-      request.fields['apply_days'] = applyDays
-          .toString(); // API biasanya butuh string di Multipart
-      request.fields['reason'] = reason;
-
-      // 5. Masukkan file attachment JIKA ADA
-      if (attachment != null) {
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'attachment', // Pastikan nama key ini sama persis dengan yang di Laravel ($request->file('attachment'))
-            attachment.path,
-          ),
-        );
-      }
-
-      // 6. Kirim Request
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-
-      // 7. Cek Hasilnya
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return true;
-      } else {
-        debugPrint(
-          "Gagal kirim cuti. Status: ${response.statusCode} Body: ${response.body}",
-        );
-        return false;
-      }
-    } catch (e) {
-      debugPrint("Exception saat kirim cuti: $e");
-      return false;
-    }
+    return true;
   }
 
-  // --- Proses Persetujuan/Penolakan Cuti oleh Manager ---
+  // Proses persetujuan atau penolakan cuti oleh Head/Manager.
   Future<bool> processTeamLeave({
     required String token,
     required int leaveId,
-    required String status, // 'Approved' atau 'Rejected'
+    required String status,
   }) async {
-    try {
-      // URL ke backend Laravel Anda
-      final url = Uri.parse(
-        '${BaseApiService.baseUrl}/leaves/$leaveId/process',
-      );
+    await postJson(
+      '/leaves/$leaveId/process',
+      token: token,
+      body: {'status': status},
+    );
 
-      final headers = await getHeaders(token);
-      headers['Content-Type'] = 'application/json'; // Pastikan format JSON
+    return true;
+  }
 
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode({'status': status}),
-      );
-
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        debugPrint("Gagal memproses cuti: ${response.body}");
-        return false;
-      }
-    } catch (e) {
-      debugPrint("Exception saat memproses cuti: $e");
-      return false;
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
     }
+
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    throw ApiException('Format response server tidak valid.');
+  }
+
+  List<dynamic> _asList(dynamic data) {
+    if (data is List<dynamic>) {
+      return data;
+    }
+
+    if (data is List) {
+      return List<dynamic>.from(data);
+    }
+
+    throw ApiException('Format data cuti dari server tidak valid.');
   }
 }

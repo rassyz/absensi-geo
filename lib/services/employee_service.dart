@@ -1,69 +1,66 @@
 // lib/services/employee_service.dart
 
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
-import 'package:absensi_geo/services/base_api_service.dart';
+import 'api_exception.dart';
+import 'base_api_service.dart';
 
 class EmployeeService extends BaseApiService {
-  // --- Mengambil Data Anggota Tim ---
-  // 👇 Tidak perlu lagi parameter token!
+  // Mengambil daftar anggota tim sesuai departemen/user login.
   Future<List<Map<String, dynamic>>> fetchTeamMembers() async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/team-members');
+    final data = await getJson('/team-members');
 
-      final headers = await getHeaders();
+    final responseData = _asMap(data);
+    final teamMembers = _extractList(responseData, key: 'data');
 
-      final response = await http.get(url, headers: headers);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> responseData = jsonDecode(response.body)['data'];
-        return List<Map<String, dynamic>>.from(responseData);
-      } else {
-        debugPrint('Gagal mengambil data karyawan: ${response.body}');
-        throw Exception('Gagal mengambil data karyawan.');
-      }
-    } catch (e) {
-      debugPrint("Error API Karyawan: $e");
-      rethrow;
-    }
+    return teamMembers.map(_asMap).toList();
   }
 
-  // --- Mengambil Data Presensi Spesifik Anggota ---
+  // Mengambil data presensi anggota tim berdasarkan employeeId.
   Future<List<Map<String, dynamic>>> fetchMemberAttendances({
     required int employeeId,
     int? month,
     int? year,
   }) async {
-    try {
-      // Siapkan URL dengan query parameters
-      String urlString =
-          '${BaseApiService.baseUrl}/team-members/$employeeId/attendances';
-      if (month != null && year != null) {
-        urlString += '?month=$month&year=$year';
-      }
+    final queryParameters = <String, dynamic>{};
 
-      final url = Uri.parse(urlString);
-      final headers = await getHeaders();
-
-      final response = await http.get(url, headers: headers);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> responseData = jsonDecode(response.body)['data'];
-        return List<Map<String, dynamic>>.from(responseData);
-      } else if (response.statusCode == 403) {
-        // debugPrint('--- DEBUG 403 DARI LARAVEL: ${response.body} ---');
-        throw Exception('Unauthorized');
-      } else {
-        // debugPrint('Gagal mengambil data presensi: ${response.body}');
-        throw Exception('Gagal mengambil data presensi anggota.');
-      }
-    } catch (e) {
-      if (e.toString().contains('Unauthorized')) {
-        rethrow;
-      }
-      debugPrint("Exception saat memproses presensi: $e");
-      rethrow;
+    if (month != null && year != null) {
+      queryParameters['month'] = month;
+      queryParameters['year'] = year;
     }
+
+    final data = await getJson(
+      '/team-members/$employeeId/attendances',
+      queryParameters: queryParameters,
+    );
+
+    final responseData = _asMap(data);
+    final attendances = _extractList(responseData, key: 'data');
+
+    return attendances.map(_asMap).toList();
+  }
+
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    throw ApiException('Format response server tidak valid.');
+  }
+
+  List<dynamic> _extractList(Map<String, dynamic> data, {required String key}) {
+    final value = data[key];
+
+    if (value is List<dynamic>) {
+      return value;
+    }
+
+    if (data.values.length == 1 && data.values.first is List<dynamic>) {
+      return data.values.first as List<dynamic>;
+    }
+
+    throw ApiException('Format data dari server tidak valid.');
   }
 }

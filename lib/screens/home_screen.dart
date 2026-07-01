@@ -97,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final historyData = await _attendanceService.getAttendanceHistory(token);
 
       if (mounted) {
-        setState(() {
+        setState(() { 
           if (statusData != null && statusData['success'] == true) {
             bool hasClockedIn = statusData['has_checked_in'] ?? false;
             bool hasClockedOut = statusData['has_checked_out'] ?? false;

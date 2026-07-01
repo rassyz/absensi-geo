@@ -1,34 +1,59 @@
 // lib/providers/auth_provider.dart
+
 import 'package:flutter/material.dart';
+
 import '../models/user_model.dart';
-// import '../services/api_service.dart';
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService authService;
 
-  // --- API State ---
+  // API State
   UserModel? _user;
   bool _isLoading = false;
   String _errorMessage = '';
 
-  // --- UI State (Restored) ---
+  // UI State
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _agreeToTerms = false;
 
   AuthProvider(this.authService);
 
-  // --- Getters ---
+  // Getters
   UserModel? get user => _user;
   bool get isLoading => _isLoading;
   String get errorMessage => _errorMessage;
+
+  bool get isAuthenticated => _user != null && _user!.token.isNotEmpty;
 
   bool get obscurePassword => _obscurePassword;
   bool get obscureConfirmPassword => _obscureConfirmPassword;
   bool get agreeToTerms => _agreeToTerms;
 
-  // --- UI Methods ---
+  // Private Helpers
+  void _setLoading(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
+
+  // ignore: unused_element
+  void _setError(String message) {
+    _errorMessage = message;
+    notifyListeners();
+  }
+
+  String _cleanErrorMessage(Object error) {
+    final message = error.toString();
+
+    if (message.startsWith('Exception: ')) {
+      return message.replaceFirst('Exception: ', '');
+    }
+
+    return message;
+  }
+
+  // UI Methods
   void togglePasswordVisibility() {
     _obscurePassword = !_obscurePassword;
     notifyListeners();
@@ -44,25 +69,35 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- API Methods ---
-  Future<bool> login(String email, String password) async {
-    _isLoading = true;
+  void clearError() {
     _errorMessage = '';
     notifyListeners();
+  }
+
+  // Auth Methods
+  Future<bool> login(String email, String password) async {
+    _setLoading(true);
+    _errorMessage = '';
 
     try {
-      UserModel? result = await authService.login(email, password);
+      // ignore: unnecessary_nullable_for_final_variable_declarations
+      final UserModel? result = await authService.login(email, password);
+
       if (result != null) {
         _user = result;
+        _errorMessage = '';
         return true;
       }
+
+      _user = null;
+      _errorMessage = 'Login gagal. Silakan coba lagi.';
       return false;
     } catch (e) {
-      _errorMessage = e.toString();
+      _user = null;
+      _errorMessage = _cleanErrorMessage(e);
       return false;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _setLoading(false);
     }
   }
 
@@ -72,58 +107,78 @@ class AuthProvider extends ChangeNotifier {
     String password,
     String passwordConfirmation,
   ) async {
-    _isLoading = true;
+    _setLoading(true);
     _errorMessage = '';
-    notifyListeners();
 
     try {
       await authService.register(name, email, password, passwordConfirmation);
+
+      _errorMessage = '';
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _errorMessage = _cleanErrorMessage(e);
       return false;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _setLoading(false);
     }
   }
 
   Future<void> logout() async {
-    final token = await authService.getToken();
+    _setLoading(true);
+    _errorMessage = '';
 
-    if (token != null && token.isNotEmpty) {
-      await authService.logout(token);
-    } else {
+    try {
+      final token = await authService.getToken();
+
+      if (token != null && token.isNotEmpty) {
+        await authService.logout(token);
+      } else {
+        await authService.clearToken();
+      }
+
+      _user = null;
+    } catch (e) {
       await authService.clearToken();
+      _user = null;
+      _errorMessage = _cleanErrorMessage(e);
+    } finally {
+      _setLoading(false);
     }
-
-    _user = null;
-    notifyListeners();
   }
 
-  Future<void> getUserProfile() async {
+  Future<bool> getUserProfile() async {
+    _setLoading(true);
+    _errorMessage = '';
+
     try {
-      UserModel? result = await authService.getUserProfile();
+      final UserModel? result = await authService.getUserProfile();
+
       if (result != null) {
         _user = result;
-        notifyListeners();
+        _errorMessage = '';
+        return true;
       }
+
+      _user = null;
+      return false;
     } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
+      _errorMessage = _cleanErrorMessage(e);
+      return false;
+    } finally {
+      _setLoading(false);
     }
   }
 
   Future<bool> restoreSession() async {
-    _isLoading = true;
+    _setLoading(true);
     _errorMessage = '';
-    notifyListeners();
 
     try {
-      final result = await authService.restoreSession();
+      final UserModel? result = await authService.restoreSession();
 
-      if (result != null) {
+      if (result != null && result.token.isNotEmpty) {
         _user = result;
+        _errorMessage = '';
         return true;
       }
 
@@ -131,12 +186,15 @@ class AuthProvider extends ChangeNotifier {
       return false;
     } catch (e) {
       _user = null;
-      _errorMessage = e.toString();
-      await authService.clearToken();
+      _errorMessage = _cleanErrorMessage(e);
       return false;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      _setLoading(false);
     }
+  }
+
+  Future<bool> checkLocalToken() async {
+    final token = await authService.getToken();
+    return token != null && token.isNotEmpty;
   }
 }

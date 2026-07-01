@@ -1,104 +1,88 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart';
-import 'package:absensi_geo/services/base_api_service.dart';
-import '../models/overtime_model.dart'; // Sesuaikan path model Anda
+// lib/services/overtime_service.dart
+
+import '../models/overtime_model.dart';
+import 'api_exception.dart';
+import 'base_api_service.dart';
 
 class OvertimeService extends BaseApiService {
-  // --- Mengambil Data Daftar Lembur ---
+  // Mengambil daftar lembur milik user login.
   Future<List<OvertimeModel>?> fetchOvertimes(String token) async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/overtimes');
-      final headers = await getHeaders(token);
+    final data = await getJson('/overtimes', token: token);
 
-      final response = await http.get(url, headers: headers);
+    final responseData = _asMap(data);
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
+    if (responseData['success'] == true) {
+      final overtimeList = _asList(responseData['data']);
 
-        if (responseData['success'] == true) {
-          List<dynamic> data = responseData['data'];
-          return data.map((item) => OvertimeModel.fromJson(item)).toList();
-        }
-        return []; // Return list kosong jika sukses tapi data kosong
-      } else {
-        debugPrint(
-          'Gagal mengambil data lembur: ${response.statusCode} - ${response.body}',
-        );
-        return null;
-      }
-    } catch (e) {
-      debugPrint("Error API Lembur: $e");
-      return null;
+      return overtimeList
+          .map((item) => OvertimeModel.fromJson(_asMap(item)))
+          .toList();
     }
+
+    return [];
   }
 
-  // --- Merekam Absen Masuk Lembur (Clock In) ---
+  // Merekam presensi masuk lembur.
   Future<bool> clockInOvertime({
     required String token,
     required int overtimeId,
     required double latitude,
     required double longitude,
   }) async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/overtimes/clock-in');
-      final headers = await getHeaders(token);
-      headers['Content-Type'] = 'application/json';
+    await postJson(
+      '/overtimes/clock-in',
+      token: token,
+      body: {
+        'overtime_id': overtimeId,
+        'latitude': latitude,
+        'longitude': longitude,
+      },
+    );
 
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode({
-          'overtime_id': overtimeId,
-          'latitude': latitude,
-          'longitude': longitude,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        final errorMessage = responseData['message'] ?? 'Gagal Clock In.';
-
-        throw Exception(errorMessage);
-      }
-    } catch (e) {
-      throw Exception(e.toString().replaceAll('Exception: ', ''));
-    }
+    return true;
   }
 
-  // --- Merekam Absen Keluar Lembur (Clock Out) ---
+  // Merekam presensi keluar lembur.
   Future<bool> clockOutOvertime({
     required String token,
     required int overtimeId,
     required double latitude,
     required double longitude,
   }) async {
-    try {
-      final url = Uri.parse('${BaseApiService.baseUrl}/overtimes/clock-out');
-      final headers = await getHeaders(token);
-      headers['Content-Type'] = 'application/json';
+    await postJson(
+      '/overtimes/clock-out',
+      token: token,
+      body: {
+        'overtime_id': overtimeId,
+        'latitude': latitude,
+        'longitude': longitude,
+      },
+    );
 
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode({
-          'overtime_id': overtimeId,
-          'latitude': latitude,
-          'longitude': longitude,
-        }),
-      );
+    return true;
+  }
 
-      if (response.statusCode == 200) {
-        return true;
-      } else {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        final errorMessage = responseData['message'] ?? 'Gagal Clock Out.';
-        throw Exception(errorMessage);
-      }
-    } catch (e) {
-      throw Exception(e.toString().replaceAll('Exception: ', ''));
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      return data;
     }
+
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+
+    throw ApiException('Format response server tidak valid.');
+  }
+
+  List<dynamic> _asList(dynamic data) {
+    if (data is List<dynamic>) {
+      return data;
+    }
+
+    if (data is List) {
+      return List<dynamic>.from(data);
+    }
+
+    throw ApiException('Format data lembur dari server tidak valid.');
   }
 }
