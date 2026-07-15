@@ -52,6 +52,7 @@ class AttendanceForm
                         'Alpha' => 'Alpha',
                         'Telat' => 'Telat',
                         'Pulang Cepat' => 'Pulang Cepat',
+                        'Libur Nasional' => 'Libur Nasional',
                     ])
                     ->required(),
                 Select::make('leave_id')
@@ -65,14 +66,14 @@ class AttendanceForm
                     ->disk('public') // Wajib: sesuaikan dengan disk di controller
                     ->directory('attendances') // Arahkan ke folder attendances
                     ->openable(), // Agar foto bisa diklik dan terbuka di tab baru
-                    // ->disabled(), // Beri disabled() agar Admin tidak bisa mengubah foto absen secara manual (opsional, tapi disarankan untuk integritas data)
+                // ->disabled(), // Beri disabled() agar Admin tidak bisa mengubah foto absen secara manual (opsional, tapi disarankan untuk integritas data)
                 FileUpload::make('check_out_photo_path')
                     ->label('Foto Check-Out')
                     ->image()
                     ->disk('public')
                     ->directory('attendances')
                     ->openable(),
-                    // ->disabled(),
+                // ->disabled(),
             ]);
     }
 }

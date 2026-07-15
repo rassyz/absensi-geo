@@ -2,81 +2,134 @@
 
 namespace App\Services;
 
-use App\Models\Employee;
 use App\Models\Attendance;
+use App\Models\Employee;
 use App\Models\EmployeeEvaluation;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 
 class EmployeeEvaluationService
 {
-    public function generate($month, $year)
+    /**
+     * Membuat evaluasi kedisiplinan karyawan berdasarkan:
+     * 1. Kehadiran
+     * 2. Keterlambatan
+     * 3. Alpa
+     */
+    public function generate($month, $year): void
     {
-        $employees = Employee::all();
-        $results = [];
+        $month = (int) $month;
+        $year = (int) $year;
+
+        if ($month < 1 || $month > 12) {
+            throw new InvalidArgumentException('Bulan harus berada antara 1 sampai 12.');
+        }
+
+        if ($year < 2000 || $year > 2100) {
+            throw new InvalidArgumentException('Tahun evaluasi tidak valid.');
+        }
+
+        $periodStart = Carbon::create($year, $month, 1)->startOfDay();
+        $periodEnd = $periodStart->copy()->endOfMonth()->endOfDay();
 
         $workingDays = $this->getWorkingDays($month, $year);
 
-        foreach ($employees as $employee) {
+        $employees = Employee::query()
+            ->orderBy('id')
+            ->get();
 
-            $attendances = Attendance::where('employee_id', $employee->id)
-                ->where(function ($q) use ($month, $year) {
-                    $q->whereMonth('check_in', $month)
-                      ->whereYear('check_in', $year);
-                })
-                ->orWhere(function ($q) use ($month, $year, $employee) {
-                    $q->where('employee_id', $employee->id)
-                      ->whereNull('check_in')
-                      ->whereMonth('created_at', $month)
-                      ->whereYear('created_at', $year);
-                })
-                ->get()
-                ->groupBy(function ($att) {
-                    return Carbon::parse($att->check_in ?? $att->created_at)->toDateString();
-                });
+        /*
+         * Mengambil data berdasarkan kolom date.
+         *
+         * Tidak lagi menggunakan:
+         * - bulan/tahun dari check_in
+         * - created_at sebagai tanggal presensi
+         * - early_leave
+         */
+        $attendancesByEmployee = Attendance::query()
+            ->whereIn('employee_id', $employees->pluck('id'))
+            ->whereBetween('date', [
+                $periodStart->toDateString(),
+                $periodEnd->toDateString(),
+            ])
+            ->orderBy('date')
+            ->orderBy('check_in')
+            ->get()
+            ->groupBy('employee_id');
+
+        $results = [];
+
+        foreach ($employees as $employee) {
+            $employeeAttendances = $attendancesByEmployee
+                ->get($employee->id, collect());
+
+            /*
+             * Satu tanggal hanya dihitung satu kali walaupun terdapat
+             * lebih dari satu record presensi pada tanggal yang sama.
+             */
+            $dailyAttendances = $employeeAttendances->groupBy(
+                fn(Attendance $attendance): string =>
+                Carbon::parse($attendance->date)->toDateString()
+            );
 
             $presentDays = 0;
-            $late = 0;
-            $early = 0;
+            $lateCount = 0;
+            $absentCount = 0;
 
-            foreach ($attendances as $date => $records) {
+            foreach ($dailyAttendances as $date => $records) {
+                $attendanceDate = Carbon::parse($date);
 
-                $dateCarbon = Carbon::parse($date);
-
-                // skip weekend
-                if ($dateCarbon->isWeekend()) {
+                // Sabtu dan Minggu tidak masuk perhitungan.
+                if ($attendanceDate->isWeekend()) {
                     continue;
                 }
 
-                $workStart = $dateCarbon->copy()->setTime(9, 0, 0);
-                $workEnd   = $dateCarbon->copy()->setTime(17, 0, 0);
+                $presentRecord = $records
+                    ->filter(
+                        fn(Attendance $attendance): bool =>
+                        $attendance->check_in !== null
+                    )
+                    ->sortBy('check_in')
+                    ->first();
 
-                // pick valid check-in record
-                $att = $records->firstWhere('check_in', '!=', null);
-
-                if ($att) {
+                if ($presentRecord !== null) {
                     $presentDays++;
 
-                    $checkIn = Carbon::parse($att->check_in);
+                    $checkIn = Carbon::parse($presentRecord->check_in);
 
-                    // late
+                    $workStart = $attendanceDate
+                        ->copy()
+                        ->setTime(9, 0, 0);
+
                     if ($checkIn->gt($workStart)) {
-                        $late++;
+                        $lateCount++;
                     }
 
-                    // early leave
-                    if ($att->check_out) {
-                        $checkOut = Carbon::parse($att->check_out);
+                    continue;
+                }
 
-                        if ($checkOut->lt($workEnd)) {
-                            $early++;
-                        }
+
+                $hasAbsentStatus = $records->contains(
+                    function (Attendance $attendance): bool {
+                        $status = strtolower(
+                            trim((string) $attendance->status)
+                        );
+
+                        return $attendance->check_in === null
+                            && in_array(
+                                $status,
+                                ['alpa', 'alpa', 'absent'],
+                                true
+                            );
                     }
+                );
+
+                if ($hasAbsentStatus) {
+                    $absentCount++;
                 }
             }
-
-            $totalDaysWithData = $attendances->count();
-            $alpha = max($totalDaysWithData - $presentDays, 0);
 
             $attendancePercentage = $workingDays > 0
                 ? ($presentDays / $workingDays) * 100
@@ -85,89 +138,131 @@ class EmployeeEvaluationService
             $results[] = [
                 'employee' => $employee,
                 'total_attendance' => $presentDays,
-                'attendance' => $attendancePercentage,
-                'late' => $late,
-                'early' => $early,
-                'alpha' => $alpha,
+                'attendance' => round($attendancePercentage, 2),
+                'late' => $lateCount,
+                'alpa' => $absentCount,
             ];
         }
 
-        // SAW CALCULATION
-        $maxAttendance = collect($results)->max('attendance') ?: 1;
+        /*
+         * NORMALISASI SAW
+         *
+         * Kehadiran = benefit
+         * Terlambat = cost
+         * Alpa      = cost
+         */
+        $resultCollection = collect($results);
 
-        $maxLate = max(collect($results)->max('late'), 1);
-        $maxEarly = max(collect($results)->max('early'), 1);
-        $maxAlpha = max(collect($results)->max('alpha'), 1);
+        $maxAttendance = max(
+            (float) ($resultCollection->max('attendance') ?? 0),
+            1
+        );
 
-        foreach ($results as &$r) {
+        $maxLate = max(
+            (int) ($resultCollection->max('late') ?? 0),
+            1
+        );
 
-            // benefit
-            $r['r_attendance'] = $r['attendance'] / $maxAttendance;
+        $maxalpa = max(
+            (int) ($resultCollection->max('alpa') ?? 0),
+            1
+        );
 
-            // cost (better normalization)
-            $r['r_late'] = 1 - ($r['late'] / $maxLate);
-            $r['r_early'] = 1 - ($r['early'] / $maxEarly);
-            $r['r_alpha'] = 1 - ($r['alpha'] / $maxAlpha);
+        foreach ($results as &$result) {
+            // Kriteria benefit: semakin tinggi semakin baik.
+            $result['r_attendance'] =
+                $result['attendance'] / $maxAttendance;
+
+            // Kriteria cost: semakin rendah semakin baik.
+            $result['r_late'] =
+                1 - ($result['late'] / $maxLate);
+
+            $result['r_alpa'] =
+                1 - ($result['alpa'] / $maxalpa);
 
             $score =
-                (0.5 * $r['r_attendance']) +
-                (0.2 * $r['r_late']) +
-                (0.15 * $r['r_early']) +
-                (0.15 * $r['r_alpha']);
+                (0.50 * $result['r_attendance']) +
+                (0.20 * $result['r_late']) +
+                (0.30 * $result['r_alpa']);
 
-            $r['score'] = $score;
+            $result['score'] = round($score, 4);
 
-            // aturan bisnis
-            if ($r['alpha'] >= 3) {
-                $r['status'] = 'pembinaan';
-            } elseif ($score >= 0.85) {
-                $r['status'] = 'sangat disiplin';
-            } elseif ($score >= 0.7) {
-                $r['status'] = 'cukup';
+            if ($result['alpa'] >= 3 || $result['late'] > 5) {
+                $result['status'] = 'pembinaan';
+            } elseif ($result['score'] >= 0.85) {
+                $result['status'] = 'disiplin';
+            } elseif ($result['score'] >= 0.70) {
+                $result['status'] = 'cukup';
             } else {
-                $r['status'] = 'pembinaan';
+                $result['status'] = 'pembinaan';
             }
         }
 
-        // 💾 SAVE
-        DB::transaction(function () use ($results, $month, $year) {
+        unset($result);
 
-            EmployeeEvaluation::where('month', $month)
-                ->where('year', $year)
-                ->delete();
+        $hasLegacyEarlyLeaveColumn = Schema::hasColumn(
+            'employee_evaluations',
+            'early_leave_count'
+        );
 
-            foreach ($results as $r) {
-                EmployeeEvaluation::create([
-                    'employee_id' => $r['employee']->id,
-                    'month' => $month,
-                    'year' => $year,
-                    'total_attendance' => $r['total_attendance'],
-                    'attendance_percentage' => $r['attendance'],
-                    'late_count' => $r['late'],
-                    'early_leave_count' => $r['early'],
-                    'absent_count' => $r['alpha'],
-                    'final_score' => $r['score'],
-                    'status' => $r['status'],
-                ]);
+        DB::transaction(
+            function () use (
+                $results,
+                $month,
+                $year,
+                $hasLegacyEarlyLeaveColumn
+            ): void {
+                EmployeeEvaluation::query()
+                    ->where('month', $month)
+                    ->where('year', $year)
+                    ->delete();
+
+                foreach ($results as $result) {
+                    $evaluationData = [
+                        'employee_id' => $result['employee']->id,
+                        'month' => $month,
+                        'year' => $year,
+                        'total_attendance' =>
+                        $result['total_attendance'],
+                        'attendance_percentage' =>
+                        $result['attendance'],
+                        'late_count' => $result['late'],
+                        'absent_count' => $result['alpa'],
+                        'final_score' => $result['score'],
+                        'status' => $result['status'],
+                    ];
+
+                    if ($hasLegacyEarlyLeaveColumn) {
+                        $evaluationData['early_leave_count'] = 0;
+                    }
+
+                    EmployeeEvaluation::query()->create(
+                        $evaluationData
+                    );
+                }
             }
-        });
+        );
     }
 
-    // HELPER: WORKING DAYS
-    private function getWorkingDays($month, $year)
+    /**
+     * Menghitung jumlah hari kerja dalam satu bulan.
+     * Hari kerja adalah Senin sampai Jumat.
+     */
+    private function getWorkingDays(int $month, int $year): int
     {
-        $start = Carbon::create($year, $month, 1);
-        $end = $start->copy()->endOfMonth();
+        $currentDate = Carbon::create($year, $month, 1);
+        $endDate = $currentDate->copy()->endOfMonth();
 
-        $days = 0;
+        $workingDays = 0;
 
-        while ($start <= $end) {
-            if (!$start->isWeekend()) {
-                $days++;
+        while ($currentDate->lte($endDate)) {
+            if (!$currentDate->isWeekend()) {
+                $workingDays++;
             }
-            $start->addDay();
+
+            $currentDate->addDay();
         }
 
-        return $days;
+        return $workingDays;
     }
 }
