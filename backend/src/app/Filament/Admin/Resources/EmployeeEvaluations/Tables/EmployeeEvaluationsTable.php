@@ -89,7 +89,7 @@ class EmployeeEvaluationsTable
                     ->badge()
                     ->formatStateUsing(
                         fn(?string $state): string => match ($state) {
-                            'sangat disiplin' => 'Sangat Disiplin',
+                            'disiplin' => 'Disiplin',
                             'cukup' => 'Cukup',
                             'pembinaan' => 'Pembinaan',
                             default => ucfirst((string) $state),
@@ -122,7 +122,7 @@ class EmployeeEvaluationsTable
                 SelectFilter::make('status')
                     ->label('Status Evaluasi')
                     ->options([
-                        'sangat disiplin' => 'Sangat Disiplin',
+                        'disiplin' => 'Disiplin',
                         'cukup' => 'Cukup',
                         'pembinaan' => 'Pembinaan',
                     ])

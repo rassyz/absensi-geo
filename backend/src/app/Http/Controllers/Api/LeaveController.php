@@ -91,29 +91,33 @@ class LeaveController extends Controller
 
                         'reason'      => $leave->reason,
                         'approved_by' => $leave->status === 'Pending'
-                                            ? '--'
-                                            : ($leave->approver ? $leave->approver->name : 'Admin'),
+                            ? '--'
+                            : ($leave->approver ? $leave->approver->name : 'Admin'),
                         'status'      => ucfirst($leave->status),
                         'is_past'     => Carbon::parse($leave->end_date)->isPast(),
                     ];
                 });
 
-            $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
+            $currentPosition = strtolower(trim((string) $user->employee->position));
 
-            $teamLeavesRaw = Leave::with(['employee.user', 'leaveType'])
-                ->when(
-                    in_array($user->employee->position, $acceptableHeadTitles, true),
-                    function ($query) use ($employeeId, $user) {
-                        $query->whereHas('employee', function ($employeeQuery) use ($employeeId, $user) {
-                            $employeeQuery->where('department_id', $user->employee->department_id)
-                                ->where('id', '!=', $employeeId);
-                        });
-                    },
-                    function ($query) {
-                        $query->whereRaw('1 = 0');
-                    }
-                )
-                ->where('status', 'Pending')
+            $teamLeavesQuery = Leave::with(['employee.user', 'leaveType'])
+                ->where('status', 'Pending');
+
+            if ($currentPosition === 'manager') {
+                $teamLeavesQuery->whereHas('employee', function ($employeeQuery) use ($employeeId) {
+                    $employeeQuery->where('id', '!=', $employeeId);
+                });
+            } elseif ($currentPosition === 'head') {
+                $teamLeavesQuery->whereHas('employee', function ($employeeQuery) use ($employeeId, $user) {
+                    $employeeQuery
+                        ->where('department_id', $user->employee->department_id)
+                        ->where('id', '!=', $employeeId);
+                });
+            } else {
+                $teamLeavesQuery->whereRaw('1 = 0');
+            }
+
+            $teamLeavesRaw = $teamLeavesQuery
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -178,13 +182,39 @@ class LeaveController extends Controller
         try {
             DB::beginTransaction();
 
-            $acceptableHeadTitles = ['head', 'Head', 'Manager', 'manager'];
+            $approverEmployee = $request->user()->employee;
 
-            if (!$leave->employee || !$request->user()->employee ||
-                $leave->employee->department_id !== $request->user()->employee->department_id ||
-                !in_array($request->user()->employee->position, $acceptableHeadTitles, true)
+            if (!$leave->employee || !$approverEmployee) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to process this leave',
+                ], 403);
+            }
+
+            $approverPosition = strtolower(
+                trim((string) $approverEmployee->position)
+            );
+
+            $isManager = $approverPosition === 'manager';
+
+            $isHeadInSameDepartment =
+                $approverPosition === 'head' &&
+                $leave->employee->department_id === $approverEmployee->department_id;
+
+            $isOwnLeave = $leave->employee_id === $approverEmployee->id;
+
+            if (
+                $isOwnLeave ||
+                (!$isManager && !$isHeadInSameDepartment)
             ) {
-                return response()->json(['success' => false, 'message' => 'Unauthorized to process this leave'], 403);
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to process this leave',
+                ], 403);
             }
 
             $leave->status = $request->status;
@@ -202,7 +232,6 @@ class LeaveController extends Controller
                 'success' => true,
                 'message' => 'Leave ' . $request->status . ' successfully'
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -239,6 +268,4 @@ class LeaveController extends Controller
             );
         }
     }
-
-
 }
