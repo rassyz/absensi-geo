@@ -4,6 +4,8 @@ import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/utils/app_message.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -25,29 +27,28 @@ class _LoginScreenState extends State<LoginScreen> {
   // Don't forget to import the MainScreen at the top of your file!
   // import 'package:absensi_geo/screens/main_screen.dart';
 
-  void _handleLogin() async {
-    // 1. Get the provider without listening (for triggering the method)
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  Future<void> _handleLogin() async {
+    FocusScope.of(context).unfocus();
 
-    // 2. Call the login method and wait for the result
+    final authProvider = context.read<AuthProvider>();
+
     final success = await authProvider.login(
       _emailController.text.trim(),
       _passwordController.text,
     );
 
-    // 3. Ensure the widget is still mounted before interacting with the UI
     if (!mounted) return;
 
-    // 4. Handle success or error using native Flutter tools
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Login successful'),
+          content: Text('Login berhasil. Selamat datang di Attendify.'),
           backgroundColor: Colors.green,
         ),
       );
 
-      // 👇 CHANGED: Navigate to the new MainScreen (the shell with the Bottom Nav Bar)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainScreen()),
@@ -55,7 +56,13 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authProvider.errorMessage),
+          content: Text(
+            AppMessage.toIndonesia(
+              authProvider.errorMessage,
+              fallback:
+                  'Login gagal. Silakan periksa email dan kata sandi Anda.',
+            ),
+          ),
           backgroundColor: Colors.red,
         ),
       );

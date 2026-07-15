@@ -1,7 +1,10 @@
 // lib/screens/member_attendance_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/employee_provider.dart';
 
 class MemberAttendanceScreen extends StatefulWidget {
@@ -19,14 +22,54 @@ class MemberAttendanceScreen extends StatefulWidget {
 }
 
 class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
-  // Secara default, set ke bulan dan tahun saat ini
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
 
-  // Fungsi untuk memunculkan modal filter
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      _loadAttendance();
+    });
+  }
+
+  void _loadAttendance({bool forceRefresh = false}) {
+    final provider = context.read<EmployeeProvider>();
+
+    final hasCache = provider.hasAttendanceCache(
+      widget.employeeId,
+      month: _selectedMonth,
+      year: _selectedYear,
+    );
+
+    unawaited(
+      provider.fetchAttendances(
+        widget.employeeId,
+        month: _selectedMonth,
+        year: _selectedYear,
+        forceRefresh: forceRefresh,
+        silent: hasCache,
+      ),
+    );
+  }
+
+  Future<void> _refreshAttendance() {
+    return context.read<EmployeeProvider>().fetchAttendances(
+      widget.employeeId,
+      month: _selectedMonth,
+      year: _selectedYear,
+      forceRefresh: true,
+      silent: true,
+    );
+  }
+
   void _showFilterModal() {
-    // 👇 Daftar nama bulan dalam bahasa Indonesia
-    final List<String> monthNames = [
+    const monthNames = [
       'Januari',
       'Februari',
       'Maret',
@@ -41,103 +84,126 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       'Desember',
     ];
 
-    showModalBottomSheet(
+    int temporaryMonth = _selectedMonth;
+    int temporaryYear = _selectedYear;
+
+    showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (BuildContext context) {
+      builder: (modalContext) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setModalState) {
-            return Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Filter Presensi',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          decoration: InputDecoration(
-                            labelText: 'Bulan',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          initialValue: _selectedMonth,
-                          items: List.generate(12, (index) {
-                            return DropdownMenuItem(
-                              value: index + 1,
-                              // 👇 Menggunakan nama bulan dari list di atas
-                              child: Text(monthNames[index]),
-                            );
-                          }),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() => _selectedMonth = val);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: DropdownButtonFormField<int>(
-                          decoration: InputDecoration(
-                            labelText: 'Tahun',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          initialValue: _selectedYear,
-                          items: List.generate(3, (index) {
-                            int year = DateTime.now().year - 2 + index;
-                            return DropdownMenuItem(
-                              value: year,
-                              child: Text(year.toString()),
-                            );
-                          }),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() => _selectedYear = val);
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        setState(() {});
-                        context.read<EmployeeProvider>().fetchAttendances(
-                          widget.employeeId,
-                          month: _selectedMonth,
-                          year: _selectedYear,
-                        );
-                      },
-                      child: const Text(
-                        'Terapkan Filter',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+          builder: (modalContext, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  20 + MediaQuery.viewInsetsOf(modalContext).bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Filter Presensi',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            initialValue: temporaryMonth,
+                            decoration: InputDecoration(
+                              labelText: 'Bulan',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            items: List.generate(12, (index) {
+                              return DropdownMenuItem<int>(
+                                value: index + 1,
+                                child: Text(monthNames[index]),
+                              );
+                            }),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+
+                              setModalState(() {
+                                temporaryMonth = value;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            initialValue: temporaryYear,
+                            decoration: InputDecoration(
+                              labelText: 'Tahun',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            items: List.generate(5, (index) {
+                              final year = DateTime.now().year - 3 + index;
+
+                              return DropdownMenuItem<int>(
+                                value: year,
+                                child: Text(year.toString()),
+                              );
+                            }),
+                            onChanged: (value) {
+                              if (value == null) {
+                                return;
+                              }
+
+                              setModalState(() {
+                                temporaryYear = value;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(modalContext);
+
+                          setState(() {
+                            _selectedMonth = temporaryMonth;
+                            _selectedYear = temporaryYear;
+                          });
+
+                          _loadAttendance();
+                        },
+                        child: const Text(
+                          'Terapkan Filter',
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -149,7 +215,70 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final employeeProvider = context.watch<EmployeeProvider>();
-    final attendances = employeeProvider.getAttendances(widget.employeeId);
+
+    final attendances = employeeProvider.getAttendances(
+      widget.employeeId,
+      month: _selectedMonth,
+      year: _selectedYear,
+    );
+
+    final hasCache = employeeProvider.hasAttendanceCache(
+      widget.employeeId,
+      month: _selectedMonth,
+      year: _selectedYear,
+    );
+
+    final isLoading = employeeProvider.isLoadingAttendancesFor(
+      widget.employeeId,
+      month: _selectedMonth,
+      year: _selectedYear,
+    );
+
+    Widget bodyContent;
+
+    if (!hasCache && isLoading) {
+      bodyContent = const _AttendanceSkeletonList();
+    } else if (attendances.isEmpty) {
+      bodyContent = RefreshIndicator(
+        onRefresh: _refreshAttendance,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.68,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 60,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Tidak ada data untuk bulan '
+                    '$_selectedMonth/$_selectedYear.',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      bodyContent = RefreshIndicator(
+        onRefresh: _refreshAttendance,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          itemCount: attendances.length,
+          itemBuilder: (context, index) {
+            return _AttendanceCard(record: attendances[index]);
+          },
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -174,58 +303,103 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
           ),
         ),
         actions: [
-          // 👇 Tombol Filter menggunakan icon tune
           IconButton(
             icon: const Icon(Icons.tune, color: Colors.black87),
             onPressed: _showFilterModal,
           ),
         ],
       ),
-      // 👇 Gunakan indikator spesifik agar tidak terpengaruh loading halaman lain
-      body: employeeProvider.isLoadingAttendances
-          ? const Center(child: CircularProgressIndicator())
-          : attendances.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.insert_drive_file_outlined,
-                    size: 60,
-                    color: Colors.grey[300],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    "Tidak ada data untuk bulan $_selectedMonth/$_selectedYear.",
-                    style: TextStyle(color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: attendances.length,
-              itemBuilder: (context, index) {
-                final record = attendances[index];
-                return _AttendanceCard(record: record);
-              },
-            ),
+      body: Column(
+        children: [
+          // Data lama tetap tampil ketika aplikasi memperbarui
+          // cache di background.
+          if (hasCache && isLoading)
+            const LinearProgressIndicator(minHeight: 2),
+          Expanded(child: bodyContent),
+        ],
+      ),
     );
   }
 }
 
-// ==========================================
-// WIDGET BANTUAN TETAP SAMA SEPERTI MILIK ANDA
-// ==========================================
+class _AttendanceSkeletonList extends StatelessWidget {
+  const _AttendanceSkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      separatorBuilder: (context, index) {
+        return const SizedBox(height: 16);
+      },
+      itemBuilder: (context, index) {
+        return Container(
+          height: 118,
+          decoration: BoxDecoration(
+            color: Colors.grey[100],
+            borderRadius: BorderRadius.circular(16),
+            border: Border(
+              left: BorderSide(color: Colors.grey[300]!, width: 8),
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 150,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _AttendanceCard extends StatelessWidget {
   final Map<String, dynamic> record;
 
   const _AttendanceCard({required this.record});
 
   String _formatDate(String? dateString) {
-    if (dateString == null) return 'Tanggal Tidak Diketahui';
+    if (dateString == null) {
+      return 'Tanggal Tidak Diketahui';
+    }
+
     try {
-      final dt = DateTime.parse(dateString).toLocal();
+      final date = DateTime.parse(dateString).toLocal();
+
       const monthNames = [
         'Januari',
         'Februari',
@@ -240,97 +414,83 @@ class _AttendanceCard extends StatelessWidget {
         'November',
         'Desember',
       ];
-      return '${dt.day} ${monthNames[dt.month - 1]} ${dt.year}';
-    } catch (e) {
+
+      return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+    } catch (_) {
       return dateString;
     }
   }
 
   String _formatTime(String? timeString) {
-    if (timeString == null || timeString == '--:--') return '--:--';
+    if (timeString == null || timeString == '--:--') {
+      return '--:--';
+    }
+
     try {
-      final dt = DateTime.parse(timeString).toLocal();
-      return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-    } catch (e) {
+      final date = DateTime.parse(timeString).toLocal();
+
+      return '${date.hour.toString().padLeft(2, '0')}:'
+          '${date.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
       return timeString;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final String currentStatus =
-        record['status']?.toString().toLowerCase() ?? '';
+    final currentStatus = record['status']?.toString().toLowerCase() ?? '';
 
-    bool isInactive =
+    final isInactive =
         currentStatus == 'future_date' || currentStatus == 'absent';
 
+    final indicatorColor = isInactive ? Colors.grey[300]! : Colors.blue[400]!;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16.0),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.grey[100],
           borderRadius: BorderRadius.circular(16),
+          border: Border(left: BorderSide(color: indicatorColor, width: 8)),
         ),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 8,
-                decoration: BoxDecoration(
-                  color: isInactive ? Colors.grey[300] : Colors.blue[400],
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    bottomLeft: Radius.circular(16),
-                  ),
+              Text(
+                _formatDate(record['date']?.toString()),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
                 ),
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 20.0,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _TimeBox(
+                      icon: Icons.login,
+                      time: _formatTime(record['check_in']?.toString()),
+                      iconColor: isInactive ? Colors.grey : Colors.blue,
+                      timeColor: isInactive
+                          ? Colors.grey[500]
+                          : Colors.grey[700],
+                    ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _formatDate(record['date']),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _TimeBox(
-                              icon: Icons.login,
-                              time: _formatTime(record['check_in']),
-                              iconColor: isInactive ? Colors.grey : Colors.blue,
-                              timeColor: isInactive
-                                  ? Colors.grey[500]
-                                  : Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _TimeBox(
-                              icon: Icons.logout,
-                              time: _formatTime(record['check_out']),
-                              iconColor: isInactive ? Colors.grey : Colors.blue,
-                              timeColor: isInactive
-                                  ? Colors.grey[500]
-                                  : Colors.grey[700],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _TimeBox(
+                      icon: Icons.logout,
+                      time: _formatTime(record['check_out']?.toString()),
+                      iconColor: isInactive ? Colors.grey : Colors.blue,
+                      timeColor: isInactive
+                          ? Colors.grey[500]
+                          : Colors.grey[700],
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),
@@ -360,8 +520,7 @@ class _TimeBox extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            // ignore: deprecated_member_use
-            color: iconColor.withOpacity(0.1),
+            color: iconColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, color: iconColor, size: 24),

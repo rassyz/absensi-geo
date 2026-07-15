@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:io';
 import '../core/utils/app_logger.dart';
+import '../core/utils/app_message.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -56,7 +57,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().replaceAll('Exception: ', '')),
+            content: Text(AppMessage.toIndonesia(e)),
             backgroundColor: AppColors.tertiary[500],
             duration: const Duration(seconds: 4),
           ),
@@ -163,7 +164,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
+          content: Text(AppMessage.toIndonesia(e)),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
@@ -205,7 +206,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
+          content: Text(AppMessage.toIndonesia(e)),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
@@ -254,7 +255,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? 'Status tidak diketahui.'),
+          content: Text(
+            AppMessage.toIndonesia(
+              result['message'],
+              fallback: result['success'] == true
+                  ? isCheckIn
+                        ? 'Presensi masuk berhasil.'
+                        : 'Presensi keluar berhasil.'
+                  : 'Presensi gagal. Silakan coba lagi.',
+            ),
+          ),
           backgroundColor: result['success'] == true
               ? AppColors.secondary[500]
               : AppColors.tertiary[500],
@@ -267,7 +277,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
+          content: Text(AppMessage.toIndonesia(e)),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
@@ -277,7 +287,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Future<void> _recenterOnUser() async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text("Updating GPS location..."),
+        content: Text("Memperbarui lokasi GPS..."),
         duration: Duration(seconds: 1),
       ),
     );
