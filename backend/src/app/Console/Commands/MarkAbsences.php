@@ -34,7 +34,8 @@ class MarkAbsences extends Command
                     'date'        => $today,
                     'clock_in'    => null,
                     'clock_out'   => null,
-                    'status'      => 'Absent', // Or 'Alpha', depending on your standard
+                    'status'      => 'Alpha',
+                    'source'      => 'System',
                 ]);
                 $absentCount++;
             }

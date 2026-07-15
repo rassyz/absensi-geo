@@ -10,7 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_exception.dart';
 
 class BaseApiService {
-  static const String baseUrl = "https://gallery-wham-jaunt.ngrok-free.dev/api";
+  // static const String baseUrl = "https://gallery-wham-jaunt.ngrok-free.dev/api";
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://attendify.rassyz.my.id/api',
+  );
 
   static const Duration apiTimeout = Duration(seconds: 15);
   static const Duration multipartTimeout = Duration(seconds: 45);
@@ -45,7 +49,7 @@ class BaseApiService {
       'Content-Type': 'application/json',
 
       // Hapus header ini ketika sudah tidak memakai ngrok.
-      'ngrok-skip-browser-warning': 'true',
+      // 'ngrok-skip-browser-warning': 'true',
     };
   }
 
@@ -55,7 +59,7 @@ class BaseApiService {
       'Content-Type': 'application/json',
 
       // Hapus header ini ketika sudah tidak memakai ngrok.
-      'ngrok-skip-browser-warning': 'true',
+      // 'ngrok-skip-browser-warning': 'true',
     };
   }
 
@@ -73,7 +77,7 @@ class BaseApiService {
       'Accept': 'application/json',
 
       // Hapus header ini ketika sudah tidak memakai ngrok.
-      'ngrok-skip-browser-warning': 'true',
+      // 'ngrok-skip-browser-warning': 'true',
     };
   }
 

@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attendify Dev",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": [
+        "--dart-define=API_BASE_URL=https://gallery-wham-jaunt.ngrok-free.dev/api"
+      ]
+    },
+    {
+      "name": "Attendify Production",
+      "request": "launch",
+      "type": "dart",
+      "toolArgs": [
+        "--dart-define=API_BASE_URL=https://attendify.rassyz.my.id/api"
+      ]
+    }
+  ]
+}
