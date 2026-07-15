@@ -17,21 +17,28 @@ class LeavesTable
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('employee.full_name')
-                    ->label('Employee Name')
+                    ->label('Nama Karyawan')
                     ->sortable()
                     ->searchable(),
 
                 TextColumn::make('leaveType.name')
-                    ->label('Leave Type')
+                    ->label('Jenis Cuti')
                     ->sortable()
                     ->searchable(),
-                TextColumn::make('start_date')->date()->sortable(),
-                TextColumn::make('end_date')->date()->sortable(),
-                TextColumn::make('apply_days')->numeric()->sortable(),
+                TextColumn::make('start_date')
+                    ->label('Tanggal Mulai')
+                    ->date('d F Y')->sortable(),
+                TextColumn::make('end_date')
+                    ->label('Tanggal Selesai')
+                    ->date('d F Y')->sortable(),
+                TextColumn::make('apply_days')
+                    ->label('Jumlah Hari')
+                    ->numeric()->sortable(),
 
                 TextColumn::make('status')
+                    ->label('Status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'Pending' => 'warning',
                         'Approved' => 'success',
                         'Rejected' => 'danger',
@@ -45,16 +52,19 @@ class LeavesTable
                     ->sortable(),
 
                 TextColumn::make('approved_at')
-                    ->date()
+                    ->label('Approved At')
+                    ->date('d F Y')
                     ->sortable(),
 
                 TextColumn::make('created_at')
-                    ->dateTime()
+                    ->label('Dibuat')
+                    ->dateTime('d F Y - H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('updated_at')
-                    ->dateTime()
+                    ->label('Diperbarui')
+                    ->dateTime('d F Y - H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])

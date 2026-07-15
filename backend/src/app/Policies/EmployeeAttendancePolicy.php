@@ -2,31 +2,54 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\Employee;
+use App\Models\User;
 
 class EmployeeAttendancePolicy
 {
-    public function viewMemberAttendances(User $user, Employee $employeeToView)
-    {
+    public function viewMemberAttendances(
+        User $user,
+        Employee $employeeToView
+    ): bool {
         $authUserEmployee = $user->employee;
 
-        // 1. Pastikan user memiliki profil karyawan
         if (!$authUserEmployee) {
             return false;
         }
 
-        // 2. Karyawan selalu bisa melihat datanya sendiri
-        if ($authUserEmployee->id == $employeeToView->id) { // Ubah jadi ==
+        // Karyawan dapat melihat presensinya sendiri.
+        if ($authUserEmployee->id === $employeeToView->id) {
             return true;
         }
 
-        // 3. Logika RBAC yang lebih fleksibel
-        // Gunakan strtolower() agar 'Head' dan 'head' dianggap sama
-        $position = strtolower(trim($authUserEmployee->position));
+        $authPosition = strtolower(
+            trim((string) $authUserEmployee->position)
+        );
 
-        if ($position === 'head' &&
-            $authUserEmployee->department_id == $employeeToView->department_id) {
+        $targetPosition = strtolower(
+            trim((string) $employeeToView->position)
+        );
+
+        // Manager dapat melihat presensi seluruh karyawan.
+        if ($authPosition === 'manager') {
+            return true;
+        }
+
+        // Head tidak boleh melihat presensi Manager,
+        // meskipun berada pada departemen yang sama.
+        if (
+            $authPosition === 'head' &&
+            $targetPosition === 'manager'
+        ) {
+            return false;
+        }
+
+        // Head hanya dapat melihat anggota departemennya.
+        if (
+            $authPosition === 'head' &&
+            $authUserEmployee->department_id ===
+            $employeeToView->department_id
+        ) {
             return true;
         }
 

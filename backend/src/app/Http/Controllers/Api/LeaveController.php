@@ -142,6 +142,7 @@ class LeaveController extends Controller
                     'employee'      => [
                         'full_name' => $fullName,
                         'position'  => $emp ? $emp->position : 'Staff Member',
+                        'department' => $emp && $emp->department ? $emp->department->name : 'N/A',
                         'user'      => ['avatar_url' => $avatarUrl]
                     ]
                 ];
@@ -263,7 +264,7 @@ class LeaveController extends Controller
                 [
                     'leave_id'           => $leave->id,
                     'status'             => 'Cuti',
-                    'source'             => 'System',
+                    'source'             => 'Sistem',
                 ]
             );
         }

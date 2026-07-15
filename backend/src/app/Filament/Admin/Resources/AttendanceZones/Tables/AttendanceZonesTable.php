@@ -24,13 +24,13 @@ class AttendanceZonesTable
 
                 TextColumn::make('created_at')
                     ->label('Dibuat')
-                    ->dateTime('d M Y - H:i')
+                    ->dateTime('d F Y - H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
 
                 TextColumn::make('updated_at')
                     ->label('Diperbarui')
-                    ->dateTime('d M Y - H:i')
+                    ->dateTime('d F Y - H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
             ])
@@ -41,7 +41,7 @@ class AttendanceZonesTable
                 EditAction::make(),
                 DeleteAction::make(),
                 ViewAction::make(),
-                    // ->modalWidth('full'),
+                // ->modalWidth('full'),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

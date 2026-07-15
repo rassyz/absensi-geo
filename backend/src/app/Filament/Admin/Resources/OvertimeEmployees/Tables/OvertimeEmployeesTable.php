@@ -28,8 +28,7 @@ class OvertimeEmployeesTable
                     ->sortable(),
                 TextColumn::make('overtime.date')
                     ->label('Tanggal Lembur')
-                    // ->formatStateUsing(fn ($state) => $state ? Carbon::parse($state)->locale('id')->isoFormat('LL') : null)
-                    ->date()
+                    ->date('d F Y')
                     ->sortable(),
                 TextColumn::make('overtime.planned_start_time')
                     ->label('Waktu Mulai')

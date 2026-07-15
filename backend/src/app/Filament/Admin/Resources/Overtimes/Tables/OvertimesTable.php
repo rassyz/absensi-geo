@@ -25,7 +25,7 @@ class OvertimesTable
                     ->searchable(),
                 TextColumn::make('date')
                     ->label('Tanggal')
-                    ->date()
+                    ->date('d F Y')
                     ->sortable(),
                 TextColumn::make('planned_start_time')
                     ->label('Waktu Mulai')

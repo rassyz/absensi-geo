@@ -46,7 +46,7 @@ class AttendanceSeeder extends Seeder
                     }
 
                     if (rand(1, 100) <= 5) {
-                        $status = 'absent';
+                        $status = 'Alpa';
                         $checkIn = null;
                         $checkOut = null;
                     }
@@ -65,8 +65,8 @@ class AttendanceSeeder extends Seeder
                         'check_out_latitude' => $checkOutPoint['latitude'] ?? null,
                         'check_out_longitude' => $checkOutPoint['longitude'] ?? null,
 
-                        'check_in_photo_path' => $status !== 'absent' ? 'photos/checkin.jpg' : null,
-                        'check_out_photo_path' => $status !== 'absent' ? 'photos/checkout.jpg' : null,
+                        'check_in_photo_path' => $status !== 'Alpa' ? 'photos/checkin.jpg' : null,
+                        'check_out_photo_path' => $status !== 'Alpa' ? 'photos/checkout.jpg' : null,
 
                         'status' => $status,
                     ]);

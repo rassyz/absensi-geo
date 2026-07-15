@@ -35,26 +35,26 @@ class AttendancesTable
                     ->sortable(),
                 TextColumn::make('date')
                     ->label('Tanggal')
-                    ->date()
+                    ->date('d F Y')
                     ->sortable()
                     ->searchable(),
                 TextColumn::make('check_in')
                     ->label('Absen Masuk')
-                    ->dateTime('d M Y - H:i')
+                    ->time('H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
                 TextColumn::make('check_out')
                     ->label('Absen Keluar')
-                    ->dateTime('d M Y - H:i')
+                    ->time('H:i')
                     ->timezone('Asia/Jakarta')
                     ->sortable(),
                 ImageColumn::make('check_in_photo_path')
                     ->label('Foto Masuk')
-                    ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
-                    ->circular(), // Opsional: membuat foto jadi bulat agar tabel terlihat lebih rapi
+                    ->disk('public')
+                    ->circular(),
                 ImageColumn::make('check_out_photo_path')
                     ->label('Foto Keluar')
-                    ->disk('public') // Sesuaikan dengan disk dan path penyimpanan di controller
+                    ->disk('public')
                     ->circular(),
                 TextColumn::make('status')
                     ->label('Status')

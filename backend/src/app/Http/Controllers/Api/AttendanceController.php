@@ -50,7 +50,6 @@ class AttendanceController extends Controller
                 'name'    => $zone->name,
                 'area'    => $areaData->wkt,
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -256,17 +255,17 @@ class AttendanceController extends Controller
 
                     // convert UTC to WIB
                     'check_in_time'   => \Carbon\Carbon::parse($attendance->check_in)
-                                            ->timezone('Asia/Jakarta')
-                                            ->format('H : i : s'),
+                        ->timezone('Asia/Jakarta')
+                        ->format('H : i : s'),
 
                     'has_checked_out' => $attendance->check_out !== null,
 
                     // convert UTC to WIB
                     'check_out_time'  => $attendance->check_out
-                                            ? \Carbon\Carbon::parse($attendance->check_out)
-                                                ->timezone('Asia/Jakarta')
-                                                ->format('H : i : s')
-                                            : '-- : -- : --',
+                        ? \Carbon\Carbon::parse($attendance->check_out)
+                        ->timezone('Asia/Jakarta')
+                        ->format('H : i : s')
+                        : '-- : -- : --',
                 ]);
             }
 
@@ -433,34 +432,76 @@ class AttendanceController extends Controller
         }
     }
 
-    // fitur tambahan untuk atasan melihat laporan anggota di departemennya
+    // fitur tambahan untuk atasan melihat laporan anggota
     public function getMemberAttendances(Request $request, $employeeId)
     {
         $employeeToView = \App\Models\Employee::findOrFail($employeeId);
         $authUserEmployee = $request->user()->employee;
 
-        if ($request->user()->cannot('viewMemberAttendances', $employeeToView)) {
+        if ($request->user()->cannot(
+            'viewMemberAttendances',
+            $employeeToView
+        )) {
             return response()->json([
                 'message' => 'Unauthorized',
                 'debug_info' => [
-                    'auth_posisi' => $authUserEmployee ? $authUserEmployee->position : 'NULL',
-                    'auth_dept' => $authUserEmployee ? $authUserEmployee->department_id : 'NULL',
+                    'auth_posisi' => $authUserEmployee
+                        ? $authUserEmployee->position
+                        : 'NULL',
+
+                    'auth_dept' => $authUserEmployee
+                        ? $authUserEmployee->department_id
+                        : 'NULL',
+
                     'target_dept' => $employeeToView->department_id,
-                ]
+                ],
             ], 403);
         }
 
-        $query = $employeeToView->attendances();
-        if ($request->has('month') && $request->has('year')) {
-            $query->whereMonth('date', $request->month)
-                  ->whereYear('date', $request->year);
-        } else {
-            $twoMonthsAgo = \Carbon\Carbon::now()->subMonths(1)->startOfMonth();
-            $query->where('date', '>=', $twoMonthsAgo);
-        }
+        $validated = $request->validate([
+            'month' => 'nullable|integer|between:1,12',
+            'year' => 'nullable|integer|min:2000|max:2100',
+        ]);
 
-        $attendances = $query->orderBy('date', 'desc')->get();
+        $month = (int) (
+            $validated['month']
+            ?? \Carbon\Carbon::now()->month
+        );
 
-        return response()->json(['data' => $attendances]);
+        $year = (int) (
+            $validated['year']
+            ?? \Carbon\Carbon::now()->year
+        );
+
+        $startDate = \Carbon\Carbon::create(
+            $year,
+            $month,
+            1
+        )->startOfMonth();
+
+        $endDate = $startDate
+            ->copy()
+            ->endOfMonth();
+
+        $attendances = $employeeToView
+            ->attendances()
+            ->select([
+                'id',
+                'employee_id',
+                'date',
+                'check_in',
+                'check_out',
+                'status',
+            ])
+            ->whereBetween('date', [
+                $startDate->toDateString(),
+                $endDate->toDateString(),
+            ])
+            ->orderByDesc('date')
+            ->get();
+
+        return response()->json([
+            'data' => $attendances,
+        ]);
     }
 }
