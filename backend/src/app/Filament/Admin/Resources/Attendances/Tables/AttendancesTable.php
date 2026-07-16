@@ -85,7 +85,7 @@ class AttendancesTable
                     ])
                     ->query(function (Builder $query, array $data) {
                         if (!empty($data['start_date']) && !empty($data['end_date'])) {
-                            $query->whereBetween('check_in', [$data['start_date'], $data['end_date']]);
+                            $query->whereBetween('date', [$data['start_date'], $data['end_date']]);
                         }
                     }),
             ])
