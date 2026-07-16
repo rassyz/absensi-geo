@@ -217,7 +217,7 @@ class _TeamMembersScreenState extends State<TeamMembersScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: DropdownButtonFormField<String>(
-              value: activeDepartment,
+              initialValue: activeDepartment,
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down),
               decoration: InputDecoration(

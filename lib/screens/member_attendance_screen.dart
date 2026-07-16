@@ -40,7 +40,6 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
 
   void _loadAttendance({bool forceRefresh = false}) {
     final provider = context.read<EmployeeProvider>();
-
     final hasCache = provider.hasAttendanceCache(
       widget.employeeId,
       month: _selectedMonth,
@@ -234,9 +233,11 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       year: _selectedYear,
     );
 
+    final isInitialLoading = !hasCache && isLoading;
+
     Widget bodyContent;
 
-    if (!hasCache && isLoading) {
+    if (isInitialLoading) {
       bodyContent = const _AttendanceSkeletonList();
     } else if (attendances.isEmpty) {
       bodyContent = RefreshIndicator(
@@ -311,12 +312,226 @@ class _MemberAttendanceScreenState extends State<MemberAttendanceScreen> {
       ),
       body: Column(
         children: [
+          _AttendanceSummary(records: attendances, isLoading: isInitialLoading),
+
           // Data lama tetap tampil ketika aplikasi memperbarui
           // cache di background.
           if (hasCache && isLoading)
             const LinearProgressIndicator(minHeight: 2),
+
           Expanded(child: bodyContent),
         ],
+      ),
+    );
+  }
+}
+
+String _resolveAttendanceStatus(Map<String, dynamic> record) {
+  final rawStatus = record['status']?.toString().trim().toLowerCase() ?? '';
+
+  if (rawStatus == 'future_date') {
+    return 'future_date';
+  }
+
+  if (rawStatus == 'late' || rawStatus.contains('telat')) {
+    return 'telat';
+  }
+
+  if (rawStatus.contains('cuti') ||
+      rawStatus.contains('izin') ||
+      rawStatus.contains('sakit') ||
+      rawStatus == 'leave') {
+    return 'cuti';
+  }
+
+  if (rawStatus == 'absent' ||
+      rawStatus.contains('alpa') ||
+      rawStatus.contains('alfa') ||
+      rawStatus.contains('alpha') ||
+      rawStatus.contains('tidak hadir')) {
+    return 'alpa';
+  }
+
+  if (rawStatus == 'hadir' || rawStatus == 'present') {
+    return 'hadir';
+  }
+
+  if (rawStatus.isEmpty && record['check_in'] != null) {
+    return 'hadir';
+  }
+
+  return rawStatus;
+}
+
+String _attendanceStatusLabel(String status) {
+  switch (status) {
+    case 'hadir':
+      return 'Hadir';
+    case 'telat':
+      return 'Telat';
+    case 'cuti':
+      return 'Izin/Cuti';
+    case 'alpa':
+      return 'Alpa';
+    case 'future_date':
+      return 'Belum Ada Data';
+    default:
+      if (status.isEmpty) {
+        return 'Tidak Diketahui';
+      }
+
+      return status
+          .split('_')
+          .where((word) => word.isNotEmpty)
+          .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+          .join(' ');
+  }
+}
+
+Color _attendanceStatusColor(String status) {
+  switch (status) {
+    case 'hadir':
+      return Colors.blue[700]!;
+    case 'telat':
+      return Colors.orange[800]!;
+    case 'cuti':
+      return Colors.teal[700]!;
+    case 'alpa':
+      return Colors.grey[700]!;
+    default:
+      return Colors.grey[600]!;
+  }
+}
+
+class _AttendanceSummary extends StatelessWidget {
+  final List<Map<String, dynamic>> records;
+  final bool isLoading;
+
+  const _AttendanceSummary({required this.records, required this.isLoading});
+
+  @override
+  Widget build(BuildContext context) {
+    int presentCount = 0;
+    int lateCount = 0;
+    int leaveCount = 0;
+    int absentCount = 0;
+
+    for (final record in records) {
+      switch (_resolveAttendanceStatus(record)) {
+        case 'hadir':
+          presentCount++;
+          break;
+        case 'telat':
+          lateCount++;
+          break;
+        case 'cuti':
+          leaveCount++;
+          break;
+        case 'alpa':
+          absentCount++;
+          break;
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _AttendanceSummaryItem(
+              label: 'Hadir',
+              value: isLoading ? '--' : presentCount.toString(),
+              icon: Icons.check_circle_outline,
+              color: Colors.blue[700]!,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _AttendanceSummaryItem(
+              label: 'Telat',
+              value: isLoading ? '--' : lateCount.toString(),
+              icon: Icons.schedule,
+              color: Colors.orange[800]!,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _AttendanceSummaryItem(
+              label: 'Izin/Cuti',
+              value: isLoading ? '--' : leaveCount.toString(),
+              icon: Icons.event_available_outlined,
+              color: Colors.teal[700]!,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _AttendanceSummaryItem(
+              label: 'Alpa',
+              value: isLoading ? '--' : absentCount.toString(),
+              icon: Icons.person_off_outlined,
+              color: Colors.grey[700]!,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceSummaryItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _AttendanceSummaryItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$label: $value',
+      child: Container(
+        height: 88,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.20)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 3),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                height: 1,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 5),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -399,7 +614,6 @@ class _AttendanceCard extends StatelessWidget {
 
     try {
       final date = DateTime.parse(dateString).toLocal();
-
       const monthNames = [
         'Januari',
         'Februari',
@@ -438,18 +652,22 @@ class _AttendanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentStatus = record['status']?.toString().toLowerCase() ?? '';
+    final status = _resolveAttendanceStatus(record);
+    final statusLabel = _attendanceStatusLabel(status);
+    final statusColor = _attendanceStatusColor(status);
 
     final isInactive =
-        currentStatus == 'future_date' || currentStatus == 'absent';
+        status == 'future_date' || status == 'cuti' || status == 'alpa';
 
-    final indicatorColor = isInactive ? Colors.grey[300]! : Colors.blue[400]!;
+    final indicatorColor = isInactive ? Colors.grey[400]! : Colors.blue[400]!;
+
+    final cardColor = isInactive ? Colors.grey[200]! : Colors.grey[100]!;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.grey[100],
+          color: cardColor,
           borderRadius: BorderRadius.circular(16),
           border: Border(left: BorderSide(color: indicatorColor, width: 8)),
         ),
@@ -458,13 +676,24 @@ class _AttendanceCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _formatDate(record['date']?.toString()),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _formatDate(record['date']?.toString()),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _AttendanceStatusBadge(
+                    label: statusLabel,
+                    color: statusColor,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Row(
@@ -494,6 +723,36 @@ class _AttendanceCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceStatusBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _AttendanceStatusBadge({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 116),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
