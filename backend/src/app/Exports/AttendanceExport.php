@@ -20,14 +20,16 @@ class AttendanceExport implements FromCollection, WithHeadings
         // Mengonversi data ke dalam format yang diperlukan untuk diekspor
         return collect($this->data)->map(function ($attendance) {
             return [
-                'nama_karyawan' => $attendance->employee->full_name, // Ambil nama karyawan
-                'zona_absensi' => $attendance->attendanceZone->name, // Ambil nama zona absensi
-                'check_in' => Carbon::parse($attendance->check_in)->setTimezone('Asia/Jakarta')->format('d M Y - H:i'), // Konversi ke zona waktu Asia/Jakarta
-                'check_out' => Carbon::parse($attendance->check_out)->setTimezone('Asia/Jakarta')->format('d M Y - H:i'), // Konversi ke zona waktu Asia/Jakarta
-                'latitude_check_in' => $attendance->check_in_latitude, // Ambil dari database
-                'longitude_check_in' => $attendance->check_in_longitude, // Ambil dari database
-                'latitude_check_out' => $attendance->check_out_latitude, // Ambil dari database
-                'longitude_check_out' => $attendance->check_out_longitude, // Ambil dari database
+                'nama_karyawan' => $attendance->employee->full_name,
+                'departemen' => $attendance->employee->department->name,
+                'zona_absensi' => $attendance->attendanceZone->name,
+                'date' => $attendance->date->setTimezone('Asia/Jakarta')->format('d M Y'),
+                'check_in' => $attendance->check_in->setTimezone('Asia/Jakarta')->format('H:i'),
+                'check_out' => $attendance->check_out->setTimezone('Asia/Jakarta')->format('H:i'),
+                'latitude_check_in' => $attendance->check_in_latitude,
+                'longitude_check_in' => $attendance->check_in_longitude,
+                'latitude_check_out' => $attendance->check_out_latitude,
+                'longitude_check_out' => $attendance->check_out_longitude,
                 'status' => $attendance->status,
             ];
         });
@@ -37,7 +39,9 @@ class AttendanceExport implements FromCollection, WithHeadings
     {
         return [
             'Nama Karyawan',
+            'Departemen',
             'Zona Absensi',
+            'Tanggal',
             'Check-In',
             'Check-Out',
             'Latitude Check-In',
