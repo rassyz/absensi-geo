@@ -14,7 +14,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: "juned@absen.test");
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   @override
@@ -23,9 +23,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
-
-  // Don't forget to import the MainScreen at the top of your file!
-  // import 'package:absensi_geo/screens/main_screen.dart';
 
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
