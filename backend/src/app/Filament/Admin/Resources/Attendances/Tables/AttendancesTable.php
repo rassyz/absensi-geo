@@ -114,7 +114,7 @@ class AttendancesTable
 
                         return Excel::download(
                             new AttendanceExport($dataToExport),
-                            'attendance_dashboard_export_' . now()->format('Y_m_d_His') . '.xlsx'
+                            'attendance_dashboard_export_' . now()->format('F_Y') . '.xlsx'
                         );
                     }),
                 BulkActionGroup::make([
