@@ -1,17 +1,20 @@
 // lib/screens/attendance_screen.dart
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/services/attendance_service.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
-import 'dart:io';
+
 import '../core/utils/app_logger.dart';
 import '../core/utils/app_message.dart';
 
@@ -22,15 +25,50 @@ class AttendanceScreen extends StatefulWidget {
   State<AttendanceScreen> createState() => _AttendanceScreenState();
 }
 
+class _AttendanceZoneMapData {
+  const _AttendanceZoneMapData({
+    required this.id,
+    required this.name,
+    required this.points,
+  });
+
+  final int id;
+  final String name;
+  final List<LatLng> points;
+
+  LatLng get center {
+    if (points.isEmpty) {
+      return const LatLng(-6.200000, 106.816666);
+    }
+
+    double latitudeTotal = 0;
+    double longitudeTotal = 0;
+
+    for (final point in points) {
+      latitudeTotal += point.latitude;
+      longitudeTotal += point.longitude;
+    }
+
+    return LatLng(
+      latitudeTotal / points.length,
+      longitudeTotal / points.length,
+    );
+  }
+}
+
 class _AttendanceScreenState extends State<AttendanceScreen> {
   final AttendanceService _attendanceService = AttendanceService();
   final ImagePicker _picker = ImagePicker();
-  File? _capturedImage;
-
   final MapController _mapController = MapController();
 
+  StreamSubscription<Position>? _positionSubscription;
+  Timer? _locationValidationDebounce;
+
+  File? _capturedImage;
+  Position? _latestPosition;
+
   // --- Dynamic Map State Variables ---
-  List<LatLng> _polygonPoints = [];
+  List<_AttendanceZoneMapData> _attendanceZones = [];
   LatLng? _officeLocation;
   LatLng? _userLocation;
   bool _isLoadingMap = true;
@@ -41,29 +79,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String _checkInTime = '-- : -- : --';
   String _checkOutTime = '-- : -- : --';
 
+  // --- Real-Time Location Validation State ---
+  bool _isLocationValid = false;
+  bool _isFakeGpsDetected = false;
+  bool _isValidatingLocation = true;
+  bool _isProcessingAttendance = false;
+  int _locationValidationRequestId = 0;
+
+  String _locationStatusCode = 'loading';
+  String _locationStatusMessage = 'Mencari lokasi terkini...';
+
   @override
   void initState() {
     super.initState();
     _initializeAttendanceData();
   }
 
+  @override
+  void dispose() {
+    _locationValidationDebounce?.cancel();
+    _positionSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _initializeAttendanceData() async {
     await _fetchTodayStatus();
-
-    try {
-      await _getUserLocation();
-    } catch (e) {
-      AppLogger.error('GPS Error', error: e);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppMessage.toIndonesia(e)),
-            backgroundColor: AppColors.tertiary[500],
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    }
 
     try {
       await _fetchAttendanceZone();
@@ -79,6 +119,30 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         );
         _isLoadingMap = false;
       });
+    }
+
+    try {
+      await _startRealtimeLocationMonitoring();
+    } catch (e) {
+      AppLogger.error('GPS Error', error: e);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLocationValid = false;
+        _isFakeGpsDetected = false;
+        _isValidatingLocation = false;
+        _locationStatusCode = 'location_error';
+        _locationStatusMessage = AppMessage.toIndonesia(e);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppMessage.toIndonesia(e)),
+          backgroundColor: AppColors.tertiary[500],
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -99,6 +163,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           if (_hasCheckedIn) {
             _checkInTime = statusData['check_in_time'] ?? '-- : -- : --';
           }
+
           if (_hasCheckedOut) {
             _checkOutTime = statusData['check_out_time'] ?? '-- : -- : --';
           }
@@ -107,30 +172,230 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  Future<void> _getUserLocation() async {
-    final Position position = await _getFreshValidPosition();
-
-    if (!mounted) return;
-
-    setState(() {
-      _userLocation = LatLng(position.latitude, position.longitude);
-    });
-  }
-
   Future<void> _fetchAttendanceZone() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.user?.token;
 
-    if (token != null) {
-      final zoneData = await _attendanceService.getUserAttendanceZone(token);
+    if (token == null || token.isEmpty) return;
 
-      if (zoneData != null && mounted) {
-        setState(() {
-          _polygonPoints = _parseWktPolygon(zoneData['area']);
-          _officeLocation = _getPolygonCenter(_polygonPoints);
-        });
+    final zonesData = await _attendanceService.getUserAttendanceZones(token);
+
+    final parsedZones = zonesData
+        .map<_AttendanceZoneMapData?>((zone) {
+          final String area = zone['area']?.toString() ?? '';
+          final List<LatLng> points = _parseWktPolygon(area);
+
+          if (points.isEmpty) return null;
+
+          return _AttendanceZoneMapData(
+            id: _parseZoneId(zone['id']),
+            name: zone['name']?.toString() ?? 'Zona Presensi',
+            points: points,
+          );
+        })
+        .whereType<_AttendanceZoneMapData>()
+        .toList();
+
+    if (!mounted) return;
+
+    final allPoints = parsedZones
+        .expand<LatLng>((zone) => zone.points)
+        .toList();
+
+    setState(() {
+      _attendanceZones = parsedZones;
+
+      if (allPoints.isNotEmpty) {
+        _officeLocation = _getPointsCenter(allPoints);
       }
+    });
+  }
+
+  Future<void> _startRealtimeLocationMonitoring() async {
+    await _ensureLocationReady();
+
+    final Position initialPosition = await _getFreshPosition();
+    _handleRealtimePosition(initialPosition, validateImmediately: true);
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 2,
+    );
+
+    await _positionSubscription?.cancel();
+
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (position) {
+            _handleRealtimePosition(position);
+          },
+          onError: (Object error) {
+            if (!mounted) return;
+
+            setState(() {
+              _isLocationValid = false;
+              _isFakeGpsDetected = false;
+              _isValidatingLocation = false;
+              _locationStatusCode = 'location_error';
+              _locationStatusMessage = AppMessage.toIndonesia(error);
+            });
+          },
+        );
+  }
+
+  void _handleRealtimePosition(
+    Position position, {
+    bool validateImmediately = false,
+  }) {
+    if (!mounted) return;
+
+    _latestPosition = position;
+
+    setState(() {
+      _userLocation = LatLng(position.latitude, position.longitude);
+    });
+
+    if (position.isMocked) {
+      _setFakeGpsStatus();
+      return;
     }
+
+    _scheduleLocationValidation(
+      position,
+      validateImmediately: validateImmediately,
+    );
+  }
+
+  void _scheduleLocationValidation(
+    Position position, {
+    bool validateImmediately = false,
+  }) {
+    _locationValidationDebounce?.cancel();
+
+    if (validateImmediately) {
+      _validateRealtimeLocation(position);
+      return;
+    }
+
+    _locationValidationDebounce = Timer(
+      const Duration(seconds: 1),
+      () => _validateRealtimeLocation(position),
+    );
+  }
+
+  Future<void> _validateRealtimeLocation(Position position) async {
+    if (!mounted) return;
+
+    if (position.isMocked) {
+      _setFakeGpsStatus();
+      return;
+    }
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.user?.token;
+
+    if (token == null || token.isEmpty) {
+      setState(() {
+        _isLocationValid = false;
+        _isFakeGpsDetected = false;
+        _isValidatingLocation = false;
+        _locationStatusCode = 'location_error';
+        _locationStatusMessage =
+            'Sesi login tidak ditemukan. Silakan login ulang.';
+      });
+      return;
+    }
+
+    final int requestId = ++_locationValidationRequestId;
+
+    setState(() {
+      _isFakeGpsDetected = false;
+      _isValidatingLocation = true;
+      _locationStatusCode = 'loading';
+      _locationStatusMessage = 'Memvalidasi lokasi terkini...';
+    });
+
+    try {
+      final result = await _attendanceService.validateAttendanceLocation(
+        token: token,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+
+      if (!mounted || requestId != _locationValidationRequestId) return;
+
+      _applyLocationValidationResult(result);
+    } catch (e) {
+      if (!mounted || requestId != _locationValidationRequestId) return;
+
+      setState(() {
+        _isLocationValid = false;
+        _isFakeGpsDetected = false;
+        _isValidatingLocation = false;
+        _locationStatusCode = 'location_error';
+        _locationStatusMessage = AppMessage.toIndonesia(e);
+      });
+    }
+  }
+
+  void _applyLocationValidationResult(Map<String, dynamic> result) {
+    if (!mounted) return;
+
+    final String status =
+        result['location_status']?.toString() ?? 'outside_area';
+    final bool isValid = result['is_valid'] == true;
+
+    setState(() {
+      _isLocationValid = isValid;
+      _isFakeGpsDetected = false;
+      _isValidatingLocation = false;
+      _locationStatusCode = status;
+      _locationStatusMessage =
+          result['message']?.toString() ??
+          (isValid
+              ? 'Lokasi berada di area presensi.'
+              : 'Lokasi berada di luar area presensi.');
+    });
+  }
+
+  void _setFakeGpsStatus() {
+    _locationValidationDebounce?.cancel();
+    _locationValidationRequestId++;
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLocationValid = false;
+      _isFakeGpsDetected = true;
+      _isValidatingLocation = false;
+      _locationStatusCode = 'fake_gps';
+      _locationStatusMessage = 'Fake GPS terdeteksi.';
+    });
+  }
+
+  Future<Map<String, dynamic>> _validatePositionBeforeAction(
+    String token,
+    Position position,
+  ) async {
+    if (position.isMocked) {
+      _setFakeGpsStatus();
+
+      return {
+        'success': true,
+        'is_valid': false,
+        'location_status': 'fake_gps',
+        'message': 'Fake GPS terdeteksi.',
+      };
+    }
+
+    final result = await _attendanceService.validateAttendanceLocation(
+      token: token,
+      latitude: position.latitude,
+      longitude: position.longitude,
+    );
+
+    _applyLocationValidationResult(result);
+    return result;
   }
 
   Future<void> _processAttendance(String token) async {
@@ -146,80 +411,114 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    Position latestPosition;
+    if (_isProcessingAttendance) return;
 
-    try {
-      latestPosition = await _getFreshValidPosition();
-
-      if (!mounted) return;
-
-      setState(() {
-        _userLocation = LatLng(
-          latestPosition.latitude,
-          latestPosition.longitude,
-        );
-      });
-    } catch (e) {
-      if (!mounted) return;
-
+    if (_isFakeGpsDetected) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppMessage.toIndonesia(e)),
+          content: const Text('Fake GPS terdeteksi.'),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
       return;
     }
 
-    final bool isCheckIn = !_hasCheckedIn;
-
-    final XFile? photo = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 30,
-      maxWidth: 1080,
-      maxHeight: 1080,
-    );
-
-    if (photo == null) {
-      return;
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _capturedImage = File(photo.path);
-    });
-
-    try {
-      latestPosition = await _getFreshValidPosition();
-
-      if (!mounted) return;
-
-      setState(() {
-        _userLocation = LatLng(
-          latestPosition.latitude,
-          latestPosition.longitude,
-        );
-      });
-    } catch (e) {
-      if (!mounted) return;
-
+    if (!_isLocationValid || _isValidatingLocation) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppMessage.toIndonesia(e)),
+          content: Text(_locationStatusMessage),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+    if (mounted) {
+      setState(() {
+        _isProcessingAttendance = true;
+      });
+    }
+
+    bool loadingDialogVisible = false;
 
     try {
+      // Validasi terbaru sebelum kamera dibuka.
+      Position latestPosition = await _getFreshPosition();
+      _updateLatestPositionMarker(latestPosition);
+
+      final preCameraValidation = await _validatePositionBeforeAction(
+        token,
+        latestPosition,
+      );
+
+      if (preCameraValidation['is_valid'] != true) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              preCameraValidation['message']?.toString() ??
+                  'Lokasi berada di luar area presensi.',
+            ),
+            backgroundColor: AppColors.tertiary[500],
+          ),
+        );
+        return;
+      }
+
+      final bool isCheckIn = !_hasCheckedIn;
+
+      // Kamera hanya dibuka setelah lokasi dinyatakan valid oleh backend.
+      // Kamera depan dipilih untuk Face Capture.
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.front,
+        imageQuality: 30,
+        maxWidth: 1080,
+        maxHeight: 1080,
+      );
+
+      if (photo == null) return;
+      if (!mounted) return;
+
+      setState(() {
+        _capturedImage = File(photo.path);
+      });
+
+      // Ambil dan validasi ulang lokasi setelah pengambilan foto.
+      latestPosition = await _getFreshPosition();
+      _updateLatestPositionMarker(latestPosition);
+
+      final afterPhotoValidation = await _validatePositionBeforeAction(
+        token,
+        latestPosition,
+      );
+
+      if (afterPhotoValidation['is_valid'] != true) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              afterPhotoValidation['message']?.toString() ??
+                  'Lokasi berada di luar area presensi.',
+            ),
+            backgroundColor: AppColors.tertiary[500],
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+      loadingDialogVisible = true;
+
+      // Backend check-in/check-out tetap melakukan validasi lokasi final.
       final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,
@@ -230,7 +529,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       if (!mounted) return;
 
-      Navigator.pop(context);
+      if (loadingDialogVisible) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingDialogVisible = false;
+      }
 
       if (result['success'] == true) {
         setState(() {
@@ -273,7 +575,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      Navigator.pop(context);
+      if (loadingDialogVisible) {
+        Navigator.of(context, rootNavigator: true).pop();
+        loadingDialogVisible = false;
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -281,25 +586,85 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           backgroundColor: AppColors.tertiary[500],
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessingAttendance = false;
+        });
+      }
     }
+  }
+
+  void _updateLatestPositionMarker(Position position) {
+    if (!mounted) return;
+
+    _latestPosition = position;
+
+    setState(() {
+      _userLocation = LatLng(position.latitude, position.longitude);
+    });
   }
 
   Future<void> _recenterOnUser() async {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text("Memperbarui lokasi GPS..."),
+        content: Text('Memperbarui lokasi GPS...'),
         duration: Duration(seconds: 1),
       ),
     );
 
     try {
-      await _getUserLocation();
+      final position = await _getFreshPosition();
+      _handleRealtimePosition(position, validateImmediately: true);
 
-      if (_userLocation != null) {
-        _mapController.move(_userLocation!, 17.0);
+      if (_latestPosition != null) {
+        _mapController.move(
+          LatLng(_latestPosition!.latitude, _latestPosition!.longitude),
+          17.0,
+        );
       }
     } catch (e) {
       AppLogger.error('Recenter Error', error: e);
+    }
+  }
+
+  bool get _isAttendanceButtonEnabled {
+    return !_hasCheckedOut &&
+        !_isProcessingAttendance &&
+        !_isValidatingLocation &&
+        !_isFakeGpsDetected &&
+        _isLocationValid;
+  }
+
+  Color get _locationStatusColor {
+    switch (_locationStatusCode) {
+      case 'inside_area':
+        return Colors.green;
+      case 'tolerance_zone':
+        return Colors.orange;
+      case 'outside_area':
+      case 'fake_gps':
+      case 'location_error':
+        return Colors.red;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  IconData get _locationStatusIcon {
+    switch (_locationStatusCode) {
+      case 'inside_area':
+        return Icons.location_on;
+      case 'tolerance_zone':
+        return Icons.radar;
+      case 'outside_area':
+        return Icons.location_off;
+      case 'fake_gps':
+        return Icons.gps_off;
+      case 'location_error':
+        return Icons.error_outline;
+      default:
+        return Icons.sync;
     }
   }
 
@@ -309,23 +674,26 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final user = authProvider.user;
 
     final employee = user?.employee;
-    String displayPosition = "Employee";
+    String displayPosition = 'Employee';
 
     final String? avatarUrl = user?.avatarUrl;
 
     if (employee != null) {
       if (employee.position != null && employee.departmentName != null) {
-        displayPosition = "${employee.departmentName} - ${employee.position}";
+        displayPosition = '${employee.departmentName} - ${employee.position}';
       } else {
-        displayPosition = employee.position ?? "Employee";
+        displayPosition = employee.position ?? 'Employee';
       }
     }
 
-    String mainButtonText = "Absen Masuk";
-    if (_hasCheckedIn && !_hasCheckedOut) {
-      mainButtonText = "Absen Keluar";
+    String mainButtonText = 'Absen Masuk';
+
+    if (_isProcessingAttendance) {
+      mainButtonText = 'Memproses Presensi...';
+    } else if (_hasCheckedIn && !_hasCheckedOut) {
+      mainButtonText = 'Absen Keluar';
     } else if (_hasCheckedOut) {
-      mainButtonText = "Presensi Selesai";
+      mainButtonText = 'Presensi Selesai';
     }
 
     return Scaffold(
@@ -380,13 +748,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       ),
       body: Stack(
         children: [
-          // 1. Peta di lapisan paling bawah (Full Screen)
           _buildMap(),
-
-          // 2. Pemilih Tanggal melayang di atas peta
           Positioned(top: 16, left: 16, right: 16, child: _buildDateSelector()),
-
-          // 👇 3. Kartu Bawah yang Tetap (Fixed Position)
           Positioned(
             left: 0,
             right: 0,
@@ -414,37 +777,56 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
     }
 
+    final allZonePoints = _attendanceZones
+        .expand<LatLng>((zone) => zone.points)
+        .toList();
+
     return FlutterMap(
       mapController: _mapController,
-      options: MapOptions(initialCenter: _officeLocation!, initialZoom: 17.0),
+      options: MapOptions(
+        initialCenter: _officeLocation!,
+        initialZoom: 17.0,
+        initialCameraFit: allZonePoints.isEmpty
+            ? null
+            : CameraFit.coordinates(
+                coordinates: allZonePoints,
+                padding: const EdgeInsets.fromLTRB(32, 100, 32, 320),
+                maxZoom: 17.0,
+              ),
+      ),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.yourcompany.absensigeo',
         ),
-        if (_polygonPoints.isNotEmpty)
+        if (_attendanceZones.isNotEmpty)
           PolygonLayer(
-            polygons: [
-              Polygon(
-                points: _polygonPoints,
+            polygons: _attendanceZones.map((zone) {
+              return Polygon(
+                points: zone.points,
                 color: AppColors.primary[500]!.withValues(alpha: 0.15),
                 borderColor: AppColors.primary[500]!,
                 borderStrokeWidth: 2.0,
-              ),
-            ],
+              );
+            }).toList(),
           ),
         MarkerLayer(
           markers: [
-            Marker(
-              point: _officeLocation!,
-              width: 40,
-              height: 40,
-              child: Icon(
-                Icons.business,
-                color: AppColors.primary[700],
-                size: 30,
-              ),
-            ),
+            ..._attendanceZones.map((zone) {
+              return Marker(
+                point: zone.center,
+                width: 44,
+                height: 44,
+                child: Tooltip(
+                  message: zone.name,
+                  child: Icon(
+                    Icons.business,
+                    color: AppColors.primary[700],
+                    size: 30,
+                  ),
+                ),
+              );
+            }),
             if (_userLocation != null)
               Marker(
                 point: _userLocation!,
@@ -498,7 +880,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
             ),
           ),
-          Icon(Icons.arrow_drop_down, color: AppColors.dark[500]),
         ],
       ),
     );
@@ -512,13 +893,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String? avatarUrl,
   ) {
     return Container(
-      // 👇 Pindahkan padding ke Container ini
-      padding: const EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 12,
-        bottom: 32, // Menjaga jarak dari Global Navbar
-      ),
+      padding: const EdgeInsets.only(left: 24, right: 24, top: 12, bottom: 32),
       decoration: BoxDecoration(
         color: AppColors.white[500],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -530,24 +905,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ),
         ],
       ),
-      // 👇 SingleChildScrollView dihapus agar fix dan tidak bisa discroll
       child: Column(
-        mainAxisSize: MainAxisSize.min, // Menyesuaikan tinggi dengan isi konten
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // --- DRAG HANDLE (Dipertahankan untuk estetika UI sesuai permintaan) ---
           Center(
             child: Container(
               width: 40,
               height: 5,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(10),
+              padding: const EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: 32,
               ),
             ),
           ),
-
-          // --- KONTEN KARTU ABSENSI ---
           Row(
             children: [
               Container(
@@ -615,12 +987,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 ),
             ],
           ),
-
+          const SizedBox(height: 16),
+          _buildRealtimeLocationStatus(),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Divider(height: 1, thickness: 1, color: AppColors.gray20),
           ),
-
           _buildTimelineItem(
             time: _checkInTime,
             label: 'Absen Masuk',
@@ -629,7 +1001,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             buttonText: 'Masuk',
             isButtonActive: !_hasCheckedIn,
           ),
-
           _buildTimelineItem(
             time: _checkOutTime,
             label: 'Absen Keluar',
@@ -638,20 +1009,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             buttonText: 'Keluar',
             isButtonActive: _hasCheckedIn && !_hasCheckedOut,
           ),
-
-          const SizedBox(height: 24),
-
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: _hasCheckedOut
-                  ? null
-                  : () => _processAttendance(token),
+              onPressed: _isAttendanceButtonEnabled
+                  ? () => _processAttendance(token)
+                  : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _hasCheckedOut
-                    ? AppColors.gray[500]
-                    : AppColors.primary[500],
+                backgroundColor: _isAttendanceButtonEnabled
+                    ? AppColors.primary[500]
+                    : AppColors.gray[500],
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -664,6 +1033,43 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRealtimeLocationStatus() {
+    final color = _locationStatusColor;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          if (_isValidatingLocation)
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            )
+          else
+            Icon(_locationStatusIcon, size: 20, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _locationStatusMessage,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
             ),
           ),
@@ -768,35 +1174,51 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   List<LatLng> _parseWktPolygon(String wkt) {
     List<LatLng> points = [];
+
     try {
-      String coordsString = wkt.replaceAll(RegExp(r'[A-Za-z\(\)]'), '').trim();
-      List<String> pairs = coordsString.split(',');
+      final String coordsString = wkt
+          .replaceAll(RegExp(r'[A-Za-z\(\)]'), '')
+          .trim();
+      final List<String> pairs = coordsString.split(',');
+
       for (String pair in pairs) {
-        List<String> coords = pair.trim().split(RegExp(r'\s+'));
+        final List<String> coords = pair.trim().split(RegExp(r'\s+'));
+
         if (coords.length == 2) {
-          double lng = double.parse(coords[0]);
-          double lat = double.parse(coords[1]);
+          final double lng = double.parse(coords[0]);
+          final double lat = double.parse(coords[1]);
           points.add(LatLng(lat, lng));
         }
       }
     } catch (e) {
       AppLogger.error('Error parsing polygon', error: e);
     }
+
     return points;
   }
 
-  LatLng _getPolygonCenter(List<LatLng> points) {
-    if (points.isEmpty) return const LatLng(-6.200000, 106.816666);
+  int _parseZoneId(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  LatLng _getPointsCenter(List<LatLng> points) {
+    if (points.isEmpty) {
+      return const LatLng(-6.200000, 106.816666);
+    }
+
     double latSum = 0;
     double lngSum = 0;
-    for (var p in points) {
-      latSum += p.latitude;
-      lngSum += p.longitude;
+
+    for (final point in points) {
+      latSum += point.latitude;
+      lngSum += point.longitude;
     }
+
     return LatLng(latSum / points.length, lngSum / points.length);
   }
 
-  Future<Position> _getFreshValidPosition() async {
+  Future<void> _ensureLocationReady() async {
     final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) {
@@ -822,33 +1244,32 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         'Izin lokasi ditolak permanen. Aktifkan izin lokasi melalui pengaturan aplikasi.',
       );
     }
+  }
 
-    final Position position = await Geolocator.getCurrentPosition(
-      // ignore: deprecated_member_use
-      desiredAccuracy: LocationAccuracy.high,
+  Future<Position> _getFreshPosition() async {
+    await _ensureLocationReady();
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
-
-    if (position.isMocked) {
-      throw Exception(
-        'Terdeteksi penggunaan Fake GPS / Mock Location. Matikan aplikasi Fake GPS untuk melakukan presensi.',
-      );
-    }
-
-    return position;
   }
 }
 
 class DottedLinePainter extends CustomPainter {
   final Color color;
+
   DottedLinePainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
-    var paint = Paint()
+    final paint = Paint()
       ..color = color
       ..strokeWidth = 1.5;
-    var dashHeight = 3.0;
-    var dashSpace = 3.0;
+
+    const double dashHeight = 3.0;
+    const double dashSpace = 3.0;
     double startY = 0;
+
     while (startY < size.height) {
       canvas.drawLine(Offset(0, startY), Offset(0, startY + dashHeight), paint);
       startY += dashHeight + dashSpace;

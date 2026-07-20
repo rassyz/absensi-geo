@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Validator;
 
 class AttendanceController extends Controller
 {
+    private const TOLERANCE_METERS = 10;
+
     public function getUserZone(Request $request)
     {
         try {
@@ -30,25 +32,33 @@ class AttendanceController extends Controller
                 ], 404);
             }
 
-            $zone = $employee->department->attendanceZones->first();
+            $validZoneIds = $employee->department->attendanceZones->pluck('id');
 
-            if (!$zone) {
+            if ($validZoneIds->isEmpty()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Zona absensi tidak ditemukan untuk departemen ini.'
                 ], 404);
             }
 
-            // ekstrak data GEOMETRY menjadi string WKT (Well-Known Text) menggunakan PostGIS
-            $areaData = DB::selectOne(
-                "SELECT ST_AsText(area) as wkt FROM attendance_zones WHERE id = ?",
-                [$zone->id]
-            );
+            $zones = DB::table('attendance_zones')
+                ->whereIn('id', $validZoneIds)
+                ->select(['id', 'name'])
+                ->selectRaw('ST_AsText(area) as area')
+                ->orderBy('id')
+                ->get()
+                ->map(function ($zone) {
+                    return [
+                        'id' => (int) $zone->id,
+                        'name' => $zone->name,
+                        'area' => $zone->area,
+                    ];
+                })
+                ->values();
 
             return response()->json([
                 'success' => true,
-                'name'    => $zone->name,
-                'area'    => $areaData->wkt,
+                'zones' => $zones,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -58,13 +68,52 @@ class AttendanceController extends Controller
         }
     }
 
+    /**
+     * Endpoint validasi lokasi real-time sebelum kamera dibuka.
+     */
+    public function validateLocationStatus(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        try {
+            $result = $this->getLocationValidationResult(
+                $request->user(),
+                (float) $request->latitude,
+                (float) $request->longitude
+            );
+
+            return response()->json([
+                'success' => true,
+                'is_valid' => $result['is_valid'],
+                'location_status' => $result['location_status'],
+                'message' => $result['message'],
+                'zone_id' => $result['zone_id'],
+                'zone_name' => $result['zone_name'],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 404);
+        }
+    }
+
     public function checkIn(Request $request)
     {
-        // validasi input
         $validator = Validator::make($request->all(), [
-            'latitude'  => 'required|numeric|between:-90,90',
+            'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
-            'photo'     => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            'photo' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -75,50 +124,50 @@ class AttendanceController extends Controller
         }
 
         try {
-            // panggil validasi lokasi
-            $isValidLocation = $this->validateLocation(
+            // Validasi final tetap dilakukan backend ketika data presensi dikirim.
+            $locationResult = $this->getLocationValidationResult(
                 $request->user(),
-                $request->latitude,
-                $request->longitude
+                (float) $request->latitude,
+                (float) $request->longitude
             );
 
-            if ($isValidLocation) {
-                $photoPath = null;
-                if ($request->hasFile('photo')) {
-                    $photoPath = $request->file('photo')->store('attendances', 'public');
-                }
-
-                $checkInTime = now();
-                $workStart = \Carbon\Carbon::today()->setTime(9, 0, 0);
-
-                $today = Carbon::today()->toDateString();
-
-                $status = $checkInTime->gt($workStart) ? 'Telat' : 'Hadir';
-
-                $attendance = Attendance::create([
-                    'employee_id'           => $request->user()->employee->id,
-                    'attendance_zone_id'    => $this->getZoneId($request->user()),
-                    'date'                  => $today,
-                    'check_in'              => $checkInTime ?? 'N/A',
-                    'check_in_latitude'     => $request->latitude,
-                    'check_in_longitude'    => $request->longitude,
-                    'check_in_photo_path'   => $photoPath,
-                    'status'                => $status,
-                    'source'                => 'Mobile',
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Check-in berhasil. Anda berada di dalam area absensi.',
-                    'data' => $attendance,
-                ]);
-            } else {
+            if (!$locationResult['is_valid']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda berada di luar area absensi.',
+                    'message' => $locationResult['message'],
                     'is_in_zone' => false,
+                    'location_status' => $locationResult['location_status'],
                 ], 422);
             }
+
+            $photoPath = null;
+            if ($request->hasFile('photo')) {
+                $photoPath = $request->file('photo')->store('attendances', 'public');
+            }
+
+            $checkInTime = now();
+            $workStart = \Carbon\Carbon::today()->setTime(9, 0, 0);
+            $today = Carbon::today()->toDateString();
+            $status = $checkInTime->gt($workStart) ? 'Telat' : 'Hadir';
+
+            $attendance = Attendance::create([
+                'employee_id' => $request->user()->employee->id,
+                'attendance_zone_id' => $locationResult['zone_id'],
+                'date' => $today,
+                'check_in' => $checkInTime,
+                'check_in_latitude' => $request->latitude,
+                'check_in_longitude' => $request->longitude,
+                'check_in_photo_path' => $photoPath,
+                'status' => $status,
+                'source' => 'Mobile',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Presensi masuk berhasil.',
+                'location_status' => $locationResult['location_status'],
+                'data' => $attendance,
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -129,11 +178,10 @@ class AttendanceController extends Controller
 
     public function checkOut(Request $request)
     {
-        // validasi input
         $validator = Validator::make($request->all(), [
-            'latitude'  => 'required|numeric|between:-90,90',
+            'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
-            'photo'     => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            'photo' => 'required|image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -144,47 +192,51 @@ class AttendanceController extends Controller
         }
 
         try {
-            // panggil validasi lokasi
-            $isValidLocation = $this->validateLocation(
+            // Validasi final tetap dilakukan backend ketika data presensi dikirim.
+            $locationResult = $this->getLocationValidationResult(
                 $request->user(),
-                $request->latitude,
-                $request->longitude
+                (float) $request->latitude,
+                (float) $request->longitude
             );
 
-            if ($isValidLocation) {
-                $attendance = Attendance::where('employee_id', $request->user()->employee->id)
-                    ->whereDate('check_in', today())
-                    ->firstOrFail();
-
-                $photoPath = null;
-                if ($request->hasFile('photo')) {
-                    $photoPath = $request->file('photo')->store('attendances', 'public');
-                }
-
-                // update absensi check-out
-                $attendance->update([
-                    'check_out'             => now() ?? 'N/A',
-                    'check_out_latitude'    => $request->latitude,
-                    'check_out_longitude'   => $request->longitude,
-                    'check_out_photo_path'  => $photoPath,
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Check-out berhasil. Hati-hati di jalan!',
-                    'data' => $attendance,
-                ]);
-            } else {
+            if (!$locationResult['is_valid']) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Anda berada di luar area absensi.',
+                    'message' => $locationResult['message'],
                     'is_in_zone' => false,
+                    'location_status' => $locationResult['location_status'],
                 ], 422);
             }
+
+            $attendance = Attendance::where(
+                'employee_id',
+                $request->user()->employee->id
+            )
+                ->whereDate('check_in', today())
+                ->firstOrFail();
+
+            $photoPath = null;
+            if ($request->hasFile('photo')) {
+                $photoPath = $request->file('photo')->store('attendances', 'public');
+            }
+
+            $attendance->update([
+                'check_out' => now(),
+                'check_out_latitude' => $request->latitude,
+                'check_out_longitude' => $request->longitude,
+                'check_out_photo_path' => $photoPath,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Presensi keluar berhasil. Hati-hati di jalan!',
+                'location_status' => $locationResult['location_status'],
+                'data' => $attendance,
+            ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Anda belum melakukan check-in hari ini.'
+                'message' => 'Anda belum melakukan presensi masuk hari ini.'
             ], 404);
         } catch (\Exception $e) {
             return response()->json([
@@ -195,21 +247,17 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Metode private untuk memvalidasi lokasi user.
-     * Menggunakan arsitektur User -> Employee -> Department -> Zones.
-     *
-     * @param \App\Models\User $user
-     * @param float $latitude
-     * @param float $longitude
-     * @return bool
-     * @throws \Exception
+     * Menghasilkan status lokasi yang sama untuk validasi real-time,
+     * validasi sebelum kamera, dan validasi final ketika menyimpan presensi.
      */
-    private function validateLocation(User $user, float $latitude, float $longitude): bool
-    {
+    private function getLocationValidationResult(
+        User $user,
+        float $latitude,
+        float $longitude
+    ): array {
         $user->loadMissing('employee.department.attendanceZones');
         $employee = $user->employee;
 
-        // validasi apakah user punya profil & departemen
         if (!$employee) {
             throw new \Exception('Profil karyawan tidak ditemukan.');
         }
@@ -218,27 +266,55 @@ class AttendanceController extends Controller
             throw new \Exception('Karyawan tidak terdaftar di departemen manapun.');
         }
 
-        // ambil ID zona yang valid
         $validZoneIds = $employee->department->attendanceZones->pluck('id');
 
         if ($validZoneIds->isEmpty()) {
             throw new \Exception('Departemen Anda tidak memiliki zona absensi.');
         }
 
-        // cek apakah koordinat user berada dalam radius 10 meter dari salah satu zona yang valid
-        return AttendanceZone::whereIn('id', $validZoneIds)
+        // Prioritas pertama: titik benar-benar berada di dalam polygon utama.
+        $insideZone = AttendanceZone::whereIn('id', $validZoneIds)
             ->whereRaw(
-                'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 10)',
+                'ST_Covers(area, ST_SetSRID(ST_MakePoint(?, ?), 4326))',
                 [$longitude, $latitude]
             )
-            ->exists();
-    }
+            ->first();
 
-    private function getZoneId(User $user): ?int
-    {
-        $employee = $user->employee;
-        // Ambil ID zona pertama yang valid
-        return $employee->department->attendanceZones->first()->id ?? null;
+        if ($insideZone) {
+            return [
+                'is_valid' => true,
+                'location_status' => 'inside_area',
+                'message' => 'Lokasi berada di area presensi.',
+                'zone_id' => $insideZone->id,
+                'zone_name' => $insideZone->name,
+            ];
+        }
+
+        // Prioritas kedua: titik berada di luar polygon, tetapi masih dalam toleransi.
+        $toleranceZone = AttendanceZone::whereIn('id', $validZoneIds)
+            ->whereRaw(
+                'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)',
+                [$longitude, $latitude, self::TOLERANCE_METERS]
+            )
+            ->first();
+
+        if ($toleranceZone) {
+            return [
+                'is_valid' => true,
+                'location_status' => 'tolerance_zone',
+                'message' => 'Lokasi berada di zona toleransi.',
+                'zone_id' => $toleranceZone->id,
+                'zone_name' => $toleranceZone->name,
+            ];
+        }
+
+        return [
+            'is_valid' => false,
+            'location_status' => 'outside_area',
+            'message' => 'Lokasi berada di luar area presensi.',
+            'zone_id' => null,
+            'zone_name' => null,
+        ];
     }
 
     public function getTodayStatus(Request $request)
@@ -251,17 +327,17 @@ class AttendanceController extends Controller
             if ($attendance) {
                 return response()->json([
                     'success' => true,
-                    'has_checked_in'  => true,
+                    'has_checked_in' => true,
 
-                    // convert UTC to WIB
-                    'check_in_time'   => \Carbon\Carbon::parse($attendance->check_in)
+                    // Convert UTC to WIB.
+                    'check_in_time' => \Carbon\Carbon::parse($attendance->check_in)
                         ->timezone('Asia/Jakarta')
                         ->format('H : i : s'),
 
                     'has_checked_out' => $attendance->check_out !== null,
 
-                    // convert UTC to WIB
-                    'check_out_time'  => $attendance->check_out
+                    // Convert UTC to WIB.
+                    'check_out_time' => $attendance->check_out
                         ? \Carbon\Carbon::parse($attendance->check_out)
                         ->timezone('Asia/Jakarta')
                         ->format('H : i : s')
@@ -271,7 +347,7 @@ class AttendanceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'has_checked_in'  => false,
+                'has_checked_in' => false,
                 'has_checked_out' => false,
             ]);
         } catch (\Exception $e) {
@@ -310,8 +386,8 @@ class AttendanceController extends Controller
             return response()->json([
                 'success' => true,
                 'total_attendance' => str_pad($totalAttendance, 2, '0', STR_PAD_LEFT),
-                'late_clock_in'    => str_pad($lateClockIn, 2, '0', STR_PAD_LEFT),
-                'no_clock_in'      => str_pad($noClockIn, 2, '0', STR_PAD_LEFT),
+                'late_clock_in' => str_pad($lateClockIn, 2, '0', STR_PAD_LEFT),
+                'no_clock_in' => str_pad($noClockIn, 2, '0', STR_PAD_LEFT),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -321,22 +397,27 @@ class AttendanceController extends Controller
         }
     }
 
-    // history presensi di home screen
+    // History presensi di home screen.
     public function getHistory(Request $request)
     {
         try {
             $employeeId = $request->user()->employee->id;
 
-            // Ambil 5 data absensi terbaru
             $attendances = Attendance::where('employee_id', $employeeId)
                 ->orderBy('date', 'desc')
                 ->take(5)
                 ->get()
                 ->map(function ($att) {
-                    $actualDate = \Carbon\Carbon::parse($att->date)->timezone('Asia/Jakarta');
+                    $actualDate = \Carbon\Carbon::parse($att->date)
+                        ->timezone('Asia/Jakarta');
 
-                    $checkInTime = $att->check_in ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta') : null;
-                    $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
+                    $checkInTime = $att->check_in
+                        ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta')
+                        : null;
+
+                    $checkOutTime = $att->check_out
+                        ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta')
+                        : null;
 
                     $status = ucfirst($att->status ?? 'Absent');
 
@@ -345,16 +426,20 @@ class AttendanceController extends Controller
                     }
 
                     return [
-                        'date'      => $actualDate->translatedFormat('j F Y'),
-                        'status'    => $status,
-                        'check_in'  => $checkInTime ? $checkInTime->format('H : i : s') : null,
-                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : null,
+                        'date' => $actualDate->translatedFormat('j F Y'),
+                        'status' => $status,
+                        'check_in' => $checkInTime
+                            ? $checkInTime->format('H : i : s')
+                            : null,
+                        'check_out' => $checkOutTime
+                            ? $checkOutTime->format('H : i : s')
+                            : null,
                     ];
                 });
 
             return response()->json([
                 'success' => true,
-                'data'    => $attendances
+                'data' => $attendances
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -364,7 +449,7 @@ class AttendanceController extends Controller
         }
     }
 
-    // laporan bulanan lengkap untuk halaman laporan
+    // Laporan bulanan lengkap untuk halaman laporan.
     public function getMonthlyReport(Request $request)
     {
         try {
@@ -398,20 +483,33 @@ class AttendanceController extends Controller
                 ->orderBy('date', 'desc')
                 ->get()
                 ->map(function ($att) {
-                    $actualDate = \Carbon\Carbon::parse($att->date)->timezone('Asia/Jakarta');
-                    $checkInTime = $att->check_in ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta') : null;
-                    $checkOutTime = $att->check_out ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta') : null;
+                    $actualDate = \Carbon\Carbon::parse($att->date)
+                        ->timezone('Asia/Jakarta');
+
+                    $checkInTime = $att->check_in
+                        ? \Carbon\Carbon::parse($att->check_in)->timezone('Asia/Jakarta')
+                        : null;
+
+                    $checkOutTime = $att->check_out
+                        ? \Carbon\Carbon::parse($att->check_out)->timezone('Asia/Jakarta')
+                        : null;
+
                     $status = ucfirst($att->status ?? 'Absent');
+
                     if ($checkInTime && $checkInTime->format('H : i : s') > '09:00:00') {
                         $status = 'Telat';
                     }
 
                     return [
-                        'raw_date'  => $actualDate->format('Y-m-d'),
-                        'date'      => $actualDate->translatedFormat('j F Y'),
-                        'status'    => $status,
-                        'check_in'  => $checkInTime ? $checkInTime->format('H : i : s') : null,
-                        'check_out' => $checkOutTime ? $checkOutTime->format('H : i : s') : null,
+                        'raw_date' => $actualDate->format('Y-m-d'),
+                        'date' => $actualDate->translatedFormat('j F Y'),
+                        'status' => $status,
+                        'check_in' => $checkInTime
+                            ? $checkInTime->format('H : i : s')
+                            : null,
+                        'check_out' => $checkOutTime
+                            ? $checkOutTime->format('H : i : s')
+                            : null,
                     ];
                 });
 
@@ -419,8 +517,8 @@ class AttendanceController extends Controller
                 'success' => true,
                 'stats' => [
                     'total_attendance' => str_pad($totalAttendance, 2, '0', STR_PAD_LEFT),
-                    'late_clock_in'    => str_pad($lateClockIn, 2, '0', STR_PAD_LEFT),
-                    'no_clock_in'      => str_pad($noClockIn, 2, '0', STR_PAD_LEFT),
+                    'late_clock_in' => str_pad($lateClockIn, 2, '0', STR_PAD_LEFT),
+                    'no_clock_in' => str_pad($noClockIn, 2, '0', STR_PAD_LEFT),
                 ],
                 'history' => $attendances
             ]);
@@ -432,10 +530,10 @@ class AttendanceController extends Controller
         }
     }
 
-    // fitur tambahan untuk atasan melihat laporan anggota
+    // Fitur tambahan untuk atasan melihat laporan anggota.
     public function getMemberAttendances(Request $request, $employeeId)
     {
-        $employeeToView = \App\Models\Employee::findOrFail($employeeId);
+        $employeeToView = Employee::findOrFail($employeeId);
         $authUserEmployee = $request->user()->employee;
 
         if ($request->user()->cannot(

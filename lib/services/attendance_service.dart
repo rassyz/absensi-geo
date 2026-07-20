@@ -6,17 +6,53 @@ import 'api_exception.dart';
 import 'base_api_service.dart';
 
 class AttendanceService extends BaseApiService {
-  /// Mengambil data zona presensi polygon berdasarkan departemen user login.
-  Future<Map<String, dynamic>?> getUserAttendanceZone(String token) async {
-    final data = await getJson('/attendance/zone', token: token);
+  /// Mengambil seluruh zona presensi polygon berdasarkan departemen user login.
+  Future<List<Map<String, dynamic>>> getUserAttendanceZones(
+    String token,
+  ) async {
+    final data = await getJson('/attendance/user-zone', token: token);
 
     final responseData = _asMap(data);
 
-    if (responseData['success'] == true) {
-      return {'name': responseData['name'], 'area': responseData['area']};
+    if (responseData['success'] != true) {
+      return <Map<String, dynamic>>[];
     }
 
-    return null;
+    final dynamic rawZones = responseData['zones'];
+
+    if (rawZones is List) {
+      return rawZones.map<Map<String, dynamic>>((dynamic zone) {
+        return _asMap(zone);
+      }).toList();
+    }
+
+    // Kompatibilitas sementara jika backend lama masih mengirim satu zona.
+    if (responseData['area'] != null) {
+      return <Map<String, dynamic>>[
+        <String, dynamic>{
+          'id': responseData['id'],
+          'name': responseData['name'],
+          'area': responseData['area'],
+        },
+      ];
+    }
+
+    return <Map<String, dynamic>>[];
+  }
+
+  /// Memvalidasi posisi terkini terhadap polygon dan zona toleransi.
+  Future<Map<String, dynamic>> validateAttendanceLocation({
+    required String token,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final data = await postJson(
+      '/attendance/validate-location',
+      token: token,
+      body: {'latitude': latitude, 'longitude': longitude},
+    );
+
+    return _asMap(data);
   }
 
   /// Mengirim presensi masuk atau keluar dengan foto dan koordinat GPS.
