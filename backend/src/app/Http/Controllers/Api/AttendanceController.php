@@ -86,6 +86,23 @@ class AttendanceController extends Controller
         }
 
         try {
+            $attendanceBlock = $this->getTodayAttendanceBlockResult(
+                $request->user()
+            );
+
+            if ($attendanceBlock['is_blocked']) {
+                return response()->json([
+                    'success' => true,
+                    'is_valid' => false,
+                    'location_status' => 'attendance_blocked',
+                    'message' => $attendanceBlock['message'],
+                    'zone_id' => null,
+                    'zone_name' => null,
+                    'is_attendance_blocked' => true,
+                    'attendance_status' => $attendanceBlock['status'],
+                ]);
+            }
+
             $result = $this->getLocationValidationResult(
                 $request->user(),
                 (float) $request->latitude,
@@ -99,6 +116,8 @@ class AttendanceController extends Controller
                 'message' => $result['message'],
                 'zone_id' => $result['zone_id'],
                 'zone_name' => $result['zone_name'],
+                'is_attendance_blocked' => false,
+                'attendance_status' => null,
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -124,6 +143,26 @@ class AttendanceController extends Controller
         }
 
         try {
+            $attendanceBlock = $this->getTodayAttendanceBlockResult(
+                $request->user()
+            );
+
+            if ($attendanceBlock['is_blocked']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $attendanceBlock['message'],
+                    'is_attendance_blocked' => true,
+                    'attendance_status' => $attendanceBlock['status'],
+                ], 422);
+            }
+
+            if ($this->getTodayCheckedInAttendance($request->user())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda sudah melakukan presensi masuk hari ini.',
+                ], 422);
+            }
+
             // Validasi final tetap dilakukan backend ketika data presensi dikirim.
             $locationResult = $this->getLocationValidationResult(
                 $request->user(),
@@ -192,6 +231,19 @@ class AttendanceController extends Controller
         }
 
         try {
+            $attendanceBlock = $this->getTodayAttendanceBlockResult(
+                $request->user()
+            );
+
+            if ($attendanceBlock['is_blocked']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $attendanceBlock['message'],
+                    'is_attendance_blocked' => true,
+                    'attendance_status' => $attendanceBlock['status'],
+                ], 422);
+            }
+
             // Validasi final tetap dilakukan backend ketika data presensi dikirim.
             $locationResult = $this->getLocationValidationResult(
                 $request->user(),
@@ -317,14 +369,119 @@ class AttendanceController extends Controller
         ];
     }
 
+    // Mengambil data presensi karyawan pada tanggal hari ini.
+    private function getTodayAttendance(User $user): ?Attendance
+    {
+        $user->loadMissing('employee');
+
+        if (!$user->employee) {
+            throw new \Exception('Profil karyawan tidak ditemukan.');
+        }
+
+        return Attendance::where('employee_id', $user->employee->id)
+            ->whereDate('date', Carbon::today())
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    // Menentukan apakah fitur presensi hari ini harus dikunci.
+    private function getAttendanceBlockResult(
+        ?Attendance $attendance
+    ): array {
+        if (!$attendance || $attendance->check_in !== null) {
+            return [
+                'is_blocked' => false,
+                'status' => null,
+                'message' => null,
+            ];
+        }
+
+        $status = trim((string) $attendance->status);
+        $normalizedStatus = strtolower($status);
+
+        if (!in_array($normalizedStatus, ['cuti', 'alpa'], true)) {
+            return [
+                'is_blocked' => false,
+                'status' => $status !== '' ? $status : null,
+                'message' => null,
+            ];
+        }
+
+        $message = $normalizedStatus === 'cuti'
+            ? 'Presensi tidak dapat dilakukan karena Anda sedang cuti hari ini.'
+            : 'Presensi tidak dapat dilakukan karena status kehadiran hari ini adalah alpa.';
+
+        return [
+            'is_blocked' => true,
+            'status' => ucfirst($normalizedStatus),
+            'message' => $message,
+        ];
+    }
+
+    private function getTodayAttendanceBlockResult(User $user): array
+    {
+        $user->loadMissing('employee');
+
+        if (!$user->employee) {
+            throw new \Exception('Profil karyawan tidak ditemukan.');
+        }
+
+        $blockedAttendance = Attendance::where(
+            'employee_id',
+            $user->employee->id
+        )
+            ->whereDate('date', Carbon::today())
+            ->whereNull('check_in')
+            ->whereRaw(
+                'LOWER(TRIM(status)) IN (?, ?)',
+                ['cuti', 'alpa']
+            )
+            ->orderByDesc('id')
+            ->first();
+
+        return $this->getAttendanceBlockResult($blockedAttendance);
+    }
+
+    private function getTodayCheckedInAttendance(
+        User $user
+    ): ?Attendance {
+        $user->loadMissing('employee');
+
+        if (!$user->employee) {
+            throw new \Exception('Profil karyawan tidak ditemukan.');
+        }
+
+        return Attendance::where('employee_id', $user->employee->id)
+            ->whereDate('date', Carbon::today())
+            ->whereNotNull('check_in')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function getTodayStatus(Request $request)
     {
         try {
-            $attendance = Attendance::where('employee_id', $request->user()->employee->id)
-                ->whereDate('check_in', today())
-                ->first();
+            $attendanceBlock = $this->getTodayAttendanceBlockResult(
+                $request->user()
+            );
+            $attendance = $this->getTodayCheckedInAttendance(
+                $request->user()
+            ) ?? $this->getTodayAttendance($request->user());
 
-            if ($attendance) {
+            if ($attendanceBlock['is_blocked']) {
+                return response()->json([
+                    'success' => true,
+                    'has_checked_in' => false,
+                    'has_checked_out' => false,
+                    'check_in_time' => '-- : -- : --',
+                    'check_out_time' => '-- : -- : --',
+                    'is_attendance_blocked' => true,
+                    'attendance_status' => $attendanceBlock['status'],
+                    'attendance_message' => $attendanceBlock['message'],
+                ]);
+            }
+
+            if ($attendance && $attendance->check_in !== null) {
                 return response()->json([
                     'success' => true,
                     'has_checked_in' => true,
@@ -342,6 +499,10 @@ class AttendanceController extends Controller
                         ->timezone('Asia/Jakarta')
                         ->format('H : i : s')
                         : '-- : -- : --',
+
+                    'is_attendance_blocked' => false,
+                    'attendance_status' => $attendance->status,
+                    'attendance_message' => null,
                 ]);
             }
 
@@ -349,6 +510,11 @@ class AttendanceController extends Controller
                 'success' => true,
                 'has_checked_in' => false,
                 'has_checked_out' => false,
+                'check_in_time' => '-- : -- : --',
+                'check_out_time' => '-- : -- : --',
+                'is_attendance_blocked' => false,
+                'attendance_status' => $attendance?->status,
+                'attendance_message' => null,
             ]);
         } catch (\Exception $e) {
             return response()->json([

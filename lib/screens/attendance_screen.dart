@@ -79,6 +79,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String _checkInTime = '-- : -- : --';
   String _checkOutTime = '-- : -- : --';
 
+  // --- Attendance Blocking State ---
+  bool _isAttendanceBlocked = false;
+  String? _attendanceBlockedStatus;
+  String _attendanceBlockedMessage = '';
+
   // --- Real-Time Location Validation State ---
   bool _isLocationValid = false;
   bool _isFakeGpsDetected = false;
@@ -121,6 +126,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       });
     }
 
+    if (_isAttendanceBlocked) {
+      return;
+    }
+
     try {
       await _startRealtimeLocationMonitoring();
     } catch (e) {
@@ -159,13 +168,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         setState(() {
           _hasCheckedIn = statusData['has_checked_in'] ?? false;
           _hasCheckedOut = statusData['has_checked_out'] ?? false;
+          _isAttendanceBlocked = statusData['is_attendance_blocked'] == true;
+          _attendanceBlockedStatus = statusData['attendance_status']
+              ?.toString();
+          _attendanceBlockedMessage =
+              statusData['attendance_message']?.toString() ?? '';
 
-          if (_hasCheckedIn) {
-            _checkInTime = statusData['check_in_time'] ?? '-- : -- : --';
-          }
+          _checkInTime =
+              statusData['check_in_time']?.toString() ?? '-- : -- : --';
+          _checkOutTime =
+              statusData['check_out_time']?.toString() ?? '-- : -- : --';
 
-          if (_hasCheckedOut) {
-            _checkOutTime = statusData['check_out_time'] ?? '-- : -- : --';
+          if (_isAttendanceBlocked) {
+            _isLocationValid = false;
+            _isFakeGpsDetected = false;
+            _isValidatingLocation = false;
+            _locationStatusCode = 'attendance_blocked';
+            _locationStatusMessage = _attendanceBlockedMessage.isNotEmpty
+                ? _attendanceBlockedMessage
+                : 'Presensi hari ini tidak tersedia.';
           }
         });
       }
@@ -255,6 +276,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _userLocation = LatLng(position.latitude, position.longitude);
     });
 
+    if (_isAttendanceBlocked) {
+      _applyAttendanceBlockedStatus();
+      return;
+    }
+
     if (position.isMocked) {
       _setFakeGpsStatus();
       return;
@@ -285,6 +311,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _validateRealtimeLocation(Position position) async {
     if (!mounted) return;
+
+    if (_isAttendanceBlocked) {
+      _applyAttendanceBlockedStatus();
+      return;
+    }
 
     if (position.isMocked) {
       _setFakeGpsStatus();
@@ -341,20 +372,51 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void _applyLocationValidationResult(Map<String, dynamic> result) {
     if (!mounted) return;
 
+    final bool isAttendanceBlocked = result['is_attendance_blocked'] == true;
     final String status =
         result['location_status']?.toString() ?? 'outside_area';
     final bool isValid = result['is_valid'] == true;
+    final String message =
+        result['message']?.toString() ??
+        (isValid
+            ? 'Lokasi berada di area presensi.'
+            : 'Lokasi berada di luar area presensi.');
 
     setState(() {
+      if (isAttendanceBlocked) {
+        _isAttendanceBlocked = true;
+        _attendanceBlockedStatus = result['attendance_status']?.toString();
+        _attendanceBlockedMessage = message;
+        _isLocationValid = false;
+        _isFakeGpsDetected = false;
+        _isValidatingLocation = false;
+        _locationStatusCode = 'attendance_blocked';
+        _locationStatusMessage = message;
+        return;
+      }
+
       _isLocationValid = isValid;
       _isFakeGpsDetected = false;
       _isValidatingLocation = false;
       _locationStatusCode = status;
-      _locationStatusMessage =
-          result['message']?.toString() ??
-          (isValid
-              ? 'Lokasi berada di area presensi.'
-              : 'Lokasi berada di luar area presensi.');
+      _locationStatusMessage = message;
+    });
+  }
+
+  void _applyAttendanceBlockedStatus() {
+    _locationValidationDebounce?.cancel();
+    _locationValidationRequestId++;
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLocationValid = false;
+      _isFakeGpsDetected = false;
+      _isValidatingLocation = false;
+      _locationStatusCode = 'attendance_blocked';
+      _locationStatusMessage = _attendanceBlockedMessage.isNotEmpty
+          ? _attendanceBlockedMessage
+          : 'Presensi hari ini tidak tersedia.';
     });
   }
 
@@ -377,6 +439,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String token,
     Position position,
   ) async {
+    if (_isAttendanceBlocked) {
+      _applyAttendanceBlockedStatus();
+
+      return {
+        'success': true,
+        'is_valid': false,
+        'location_status': 'attendance_blocked',
+        'message': _locationStatusMessage,
+        'is_attendance_blocked': true,
+        'attendance_status': _attendanceBlockedStatus,
+      };
+    }
+
     if (position.isMocked) {
       _setFakeGpsStatus();
 
@@ -412,6 +487,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
 
     if (_isProcessingAttendance) return;
+
+    if (_isAttendanceBlocked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _attendanceBlockedMessage.isNotEmpty
+                ? _attendanceBlockedMessage
+                : 'Presensi hari ini tidak tersedia.',
+          ),
+          backgroundColor: AppColors.tertiary[500],
+        ),
+      );
+      return;
+    }
 
     if (_isFakeGpsDetected) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -629,7 +718,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   bool get _isAttendanceButtonEnabled {
-    return !_hasCheckedOut &&
+    return !_isAttendanceBlocked &&
+        !_hasCheckedOut &&
         !_isProcessingAttendance &&
         !_isValidatingLocation &&
         !_isFakeGpsDetected &&
@@ -642,6 +732,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         return Colors.green;
       case 'tolerance_zone':
         return Colors.orange;
+      case 'attendance_blocked':
+        return _attendanceBlockedStatus?.toLowerCase() == 'cuti'
+            ? Colors.orange
+            : Colors.red;
       case 'outside_area':
       case 'fake_gps':
       case 'location_error':
@@ -657,6 +751,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         return Icons.location_on;
       case 'tolerance_zone':
         return Icons.radar;
+      case 'attendance_blocked':
+        return Icons.event_busy;
       case 'outside_area':
         return Icons.location_off;
       case 'fake_gps':
@@ -688,7 +784,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     String mainButtonText = 'Absen Masuk';
 
-    if (_isProcessingAttendance) {
+    if (_isAttendanceBlocked) {
+      final blockedStatus = _attendanceBlockedStatus?.trim();
+
+      mainButtonText = blockedStatus != null && blockedStatus.isNotEmpty
+          ? '$blockedStatus Hari Ini'
+          : 'Presensi Tidak Tersedia';
+    } else if (_isProcessingAttendance) {
       mainButtonText = 'Memproses Presensi...';
     } else if (_hasCheckedIn && !_hasCheckedOut) {
       mainButtonText = 'Absen Keluar';
@@ -893,7 +995,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     String? avatarUrl,
   ) {
     return Container(
-      padding: const EdgeInsets.only(left: 24, right: 24, top: 12, bottom: 32),
+      padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 32),
       decoration: BoxDecoration(
         color: AppColors.white[500],
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -908,18 +1010,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 5,
-              padding: const EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: 32,
-              ),
-            ),
-          ),
           Row(
             children: [
               Container(
@@ -999,7 +1089,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             isCompleted: _hasCheckedIn,
             isLast: false,
             buttonText: 'Masuk',
-            isButtonActive: !_hasCheckedIn,
+            isButtonActive: !_isAttendanceBlocked && !_hasCheckedIn,
           ),
           _buildTimelineItem(
             time: _checkOutTime,
@@ -1007,7 +1097,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             isCompleted: _hasCheckedOut,
             isLast: true,
             buttonText: 'Keluar',
-            isButtonActive: _hasCheckedIn && !_hasCheckedOut,
+            isButtonActive:
+                !_isAttendanceBlocked && _hasCheckedIn && !_hasCheckedOut,
           ),
           const SizedBox(height: 20),
           SizedBox(
