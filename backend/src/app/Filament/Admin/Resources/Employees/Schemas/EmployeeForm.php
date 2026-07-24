@@ -15,13 +15,16 @@ class EmployeeForm
             ->components([
                 Select::make('user_id')
                     ->label('User')
-                    ->relationship('user', 'email')
+                    ->relationship('user', 'name')
                     ->unique()
                     ->searchable()
+                    ->preload()
+                    ->placeholder('Pilih Nama User')
                     ->required(),
                 Select::make('department_id')
                     ->label('Departemen')
                     ->relationship('department', 'name')
+                    ->placeholder('Pilih Departemen')
                     ->required(),
                 TextInput::make('full_name')
                     ->label('Nama Lengkap')

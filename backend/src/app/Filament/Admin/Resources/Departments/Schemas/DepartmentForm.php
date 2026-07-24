@@ -17,17 +17,12 @@ class DepartmentForm
                     ->required(),
                 Select::make('attendanceZones')
                     ->options(\App\Models\AttendanceZone::pluck('name', 'id'))
-                    ->label('Zona Absensi')
+                    ->label('Zona Presensi')
                     ->multiple()
                     ->relationship('attendanceZones', 'name')
                     ->preload()
+                    ->placeholder('Pilih Zona Presensi')
                     ->required(),
-                    // ->options([
-                    //     'HR' => 'HR',
-                    //     'IT' => 'IT',
-                    //     'Finance' => 'Finance',
-                    //     'Marketing' => 'Marketing',
-                    // ])
             ]);
     }
 }
