@@ -1,12 +1,21 @@
 <?php
 
-namespace App\Filament\Resources\LeaveResource\Widgets;
+namespace App\Filament\Admin\Resources\Leaves\Widgets;
 
+use App\Filament\Admin\Resources\Leaves\Pages\ListLeaves;
 use Filament\Widgets\ChartWidget;
-use App\Models\Leave; // Sesuaikan dengan model Cuti Anda
+use Filament\Widgets\Concerns\InteractsWithPageTable;
+use Illuminate\Database\Eloquent\Builder;
 
 class LeaveStatusChart extends ChartWidget
 {
+    use InteractsWithPageTable;
+
+    protected function getTablePage(): string
+    {
+        return ListLeaves::class;
+    }
+
     public function getHeading(): ?string
     {
         return 'Distribusi Status Cuti';
@@ -14,36 +23,62 @@ class LeaveStatusChart extends ChartWidget
 
     protected function getData(): array
     {
-        // Sesuaikan string 'Pending', 'Disetujui', 'Ditolak' dengan data di database Anda
-        $pending = Leave::where('status', 'Pending')->count();
-        $approved = Leave::where('status', 'Approved')->count(); // Atau 'Approved'
-        $rejected = Leave::where('status', 'Rejected')->count(); // Atau 'Rejected'
+        $filteredQuery = $this->getPageTableQuery();
+
+        $pending = $this->countByStatus(
+            $filteredQuery,
+            'Pending'
+        );
+
+        $approved = $this->countByStatus(
+            $filteredQuery,
+            'Approved'
+        );
+
+        $rejected = $this->countByStatus(
+            $filteredQuery,
+            'Rejected'
+        );
 
         return [
             'datasets' => [
                 [
                     'label' => 'Total Cuti',
-                    'data' => [$pending, $approved, $rejected],
-                    'backgroundColor' => [
-                        '#eab308', // Kuning (Pending)
-                        '#22c55e', // Hijau (Disetujui)
-                        '#ef4444', // Merah (Ditolak)
+                    'data' => [
+                        $pending,
+                        $approved,
+                        $rejected,
                     ],
-                    'borderColor' => '#18181b', // Border dark mode
+                    'backgroundColor' => [
+                        '#eab308',
+                        '#22c55e',
+                        '#ef4444',
+                    ],
+                    'borderColor' => '#18181b',
                     'borderWidth' => 2,
                 ],
             ],
             'labels' => [
-                "Menunggu Persetujuan ($pending)",
-                "Disetujui ($approved)",
-                "Ditolak ($rejected)"
+                "Menunggu Persetujuan ({$pending})",
+                "Disetujui ({$approved})",
+                "Ditolak ({$rejected})",
             ],
         ];
     }
 
+    private function countByStatus(
+        Builder $query,
+        string $status
+    ): int {
+        return (clone $query)
+            ->reorder()
+            ->where('status', $status)
+            ->count();
+    }
+
     protected function getType(): string
     {
-        return 'pie'; // Grafik bentuk Pie / Kue
+        return 'pie';
     }
 
     protected function getOptions(): array
@@ -52,8 +87,12 @@ class LeaveStatusChart extends ChartWidget
             'maintainAspectRatio' => false,
             'plugins' => [
                 'legend' => [
-                    'position' => 'right', // Taruh keterangan di sebelah kanan agar rapi
-                    'labels' => ['font' => ['weight' => 'bold']],
+                    'position' => 'right',
+                    'labels' => [
+                        'font' => [
+                            'weight' => 'bold',
+                        ],
+                    ],
                 ],
             ],
         ];

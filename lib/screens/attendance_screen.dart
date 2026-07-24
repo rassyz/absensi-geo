@@ -422,6 +422,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   void _setFakeGpsStatus() {
     _locationValidationDebounce?.cancel();
+    _positionSubscription?.cancel();
     _locationValidationRequestId++;
 
     if (!mounted) return;
@@ -431,46 +432,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _isFakeGpsDetected = true;
       _isValidatingLocation = false;
       _locationStatusCode = 'fake_gps';
-      _locationStatusMessage = 'Fake GPS terdeteksi.';
+      _locationStatusMessage =
+          'Fake GPS terdeteksi. Harap matikan dan muat ulang halaman ini.';
     });
-  }
-
-  Future<Map<String, dynamic>> _validatePositionBeforeAction(
-    String token,
-    Position position,
-  ) async {
-    if (_isAttendanceBlocked) {
-      _applyAttendanceBlockedStatus();
-
-      return {
-        'success': true,
-        'is_valid': false,
-        'location_status': 'attendance_blocked',
-        'message': _locationStatusMessage,
-        'is_attendance_blocked': true,
-        'attendance_status': _attendanceBlockedStatus,
-      };
-    }
-
-    if (position.isMocked) {
-      _setFakeGpsStatus();
-
-      return {
-        'success': true,
-        'is_valid': false,
-        'location_status': 'fake_gps',
-        'message': 'Fake GPS terdeteksi.',
-      };
-    }
-
-    final result = await _attendanceService.validateAttendanceLocation(
-      token: token,
-      latitude: position.latitude,
-      longitude: position.longitude,
-    );
-
-    _applyLocationValidationResult(result);
-    return result;
   }
 
   Future<void> _processAttendance(String token) async {
@@ -531,34 +495,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     bool loadingDialogVisible = false;
 
     try {
-      // Validasi terbaru sebelum kamera dibuka.
-      Position latestPosition = await _getFreshPosition();
-      _updateLatestPositionMarker(latestPosition);
-
-      final preCameraValidation = await _validatePositionBeforeAction(
-        token,
-        latestPosition,
-      );
-
-      if (preCameraValidation['is_valid'] != true) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              preCameraValidation['message']?.toString() ??
-                  'Lokasi berada di luar area presensi.',
-            ),
-            backgroundColor: AppColors.tertiary[500],
-          ),
-        );
-        return;
-      }
-
+      // 1. HAPUS _validatePositionBeforeAction di sini. Langsung buka kamera!
       final bool isCheckIn = !_hasCheckedIn;
 
-      // Kamera hanya dibuka setelah lokasi dinyatakan valid oleh backend.
-      // Kamera depan dipilih untuk Face Capture.
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.front,
@@ -574,32 +513,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _capturedImage = File(photo.path);
       });
 
-      // Ambil dan validasi ulang lokasi setelah pengambilan foto.
-      latestPosition = await _getFreshPosition();
-      _updateLatestPositionMarker(latestPosition);
-
-      final afterPhotoValidation = await _validatePositionBeforeAction(
-        token,
-        latestPosition,
-      );
-
-      if (afterPhotoValidation['is_valid'] != true) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              afterPhotoValidation['message']?.toString() ??
-                  'Lokasi berada di luar area presensi.',
-            ),
-            backgroundColor: AppColors.tertiary[500],
-          ),
-        );
-        return;
-      }
-
-      if (!mounted) return;
-
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -607,7 +520,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
       loadingDialogVisible = true;
 
-      // Backend check-in/check-out tetap melakukan validasi lokasi final.
+      // 2. Ambil titik kordinat PALING BARU tepat setelah foto diambil
+      Position latestPosition = await _getFreshPosition();
+      _updateLatestPositionMarker(latestPosition);
+
+      // 3. HAPUS _validatePositionBeforeAction di sini.
+      // Langsung tembak ke fungsi Submit! Biarkan backend (Laravel) yang memvalidasi.
       final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,

@@ -7,7 +7,6 @@ use App\Filament\Admin\Resources\Leaves\Pages\EditLeave;
 use App\Filament\Admin\Resources\Leaves\Pages\ListLeaves;
 use App\Filament\Admin\Resources\Leaves\Schemas\LeaveForm;
 use App\Filament\Admin\Resources\Leaves\Tables\LeavesTable;
-use App\Filament\Resources\LeaveResource\Widgets\LeaveStatusChart;
 use App\Models\Leave;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -48,13 +47,6 @@ class LeaveResource extends Resource
             'index' => ListLeaves::route('/'),
             'create' => CreateLeave::route('/create'),
             'edit' => EditLeave::route('/{record}/edit'),
-        ];
-    }
-
-    public static function getWidgets(): array
-    {
-        return [
-            LeaveStatusChart::class,
         ];
     }
 }
