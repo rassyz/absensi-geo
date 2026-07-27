@@ -608,12 +608,23 @@ class _AttendanceCard extends StatelessWidget {
   const _AttendanceCard({required this.record});
 
   String _formatDate(String? dateString) {
-    if (dateString == null) {
+    if (dateString == null || dateString.trim().isEmpty) {
       return 'Tanggal Tidak Diketahui';
     }
 
     try {
       final date = DateTime.parse(dateString).toLocal();
+
+      const dayNames = [
+        'Senin',
+        'Selasa',
+        'Rabu',
+        'Kamis',
+        'Jumat',
+        'Sabtu',
+        'Minggu',
+      ];
+
       const monthNames = [
         'Januari',
         'Februari',
@@ -629,7 +640,10 @@ class _AttendanceCard extends StatelessWidget {
         'Desember',
       ];
 
-      return '${date.day} ${monthNames[date.month - 1]} ${date.year}';
+      final dayName = dayNames[date.weekday - 1];
+      final monthName = monthNames[date.month - 1];
+
+      return '$dayName, ${date.day} $monthName ${date.year}';
     } catch (_) {
       return dateString;
     }

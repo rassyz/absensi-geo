@@ -3,15 +3,23 @@
 import 'package:flutter/material.dart';
 
 import '../models/user_model.dart';
+import '../services/api_exception.dart';
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService authService;
 
+  static const String defaultSessionExpiredMessage =
+      'Sesi login telah berakhir. Silakan login kembali.';
+
   // API State
   UserModel? _user;
   bool _isLoading = false;
   String _errorMessage = '';
+
+  // Session State
+  bool _isSessionExpired = false;
+  String _sessionExpiredMessage = defaultSessionExpiredMessage;
 
   // UI State
   bool _obscurePassword = true;
@@ -26,6 +34,8 @@ class AuthProvider extends ChangeNotifier {
   String get errorMessage => _errorMessage;
 
   bool get isAuthenticated => _user != null && _user!.token.isNotEmpty;
+  bool get isSessionExpired => _isSessionExpired;
+  String get sessionExpiredMessage => _sessionExpiredMessage;
 
   bool get obscurePassword => _obscurePassword;
   bool get obscureConfirmPassword => _obscureConfirmPassword;
@@ -51,6 +61,28 @@ class AuthProvider extends ChangeNotifier {
     }
 
     return message;
+  }
+
+  void _resetExpiredSessionState() {
+    _isSessionExpired = false;
+    _sessionExpiredMessage = defaultSessionExpiredMessage;
+  }
+
+  // Session Methods
+  void markSessionExpired([String? message]) {
+    _user = null;
+    _isSessionExpired = true;
+    _sessionExpiredMessage = message?.trim().isNotEmpty == true
+        ? message!.trim()
+        : defaultSessionExpiredMessage;
+    _errorMessage = _sessionExpiredMessage;
+    notifyListeners();
+  }
+
+  void clearSessionExpiredNotice() {
+    _resetExpiredSessionState();
+    _errorMessage = '';
+    notifyListeners();
   }
 
   // UI Methods
@@ -80,20 +112,22 @@ class AuthProvider extends ChangeNotifier {
     _errorMessage = '';
 
     try {
-      // ignore: unnecessary_nullable_for_final_variable_declarations
       final UserModel? result = await authService.login(email, password);
 
       if (result != null) {
         _user = result;
+        _resetExpiredSessionState();
         _errorMessage = '';
         return true;
       }
 
       _user = null;
+      _resetExpiredSessionState();
       _errorMessage = 'Login gagal. Silakan coba lagi.';
       return false;
     } catch (e) {
       _user = null;
+      _resetExpiredSessionState();
       _errorMessage = _cleanErrorMessage(e);
       return false;
     } finally {
@@ -137,9 +171,11 @@ class AuthProvider extends ChangeNotifier {
       }
 
       _user = null;
+      _resetExpiredSessionState();
     } catch (e) {
       await authService.clearToken();
       _user = null;
+      _resetExpiredSessionState();
       _errorMessage = _cleanErrorMessage(e);
     } finally {
       _setLoading(false);
@@ -155,11 +191,15 @@ class AuthProvider extends ChangeNotifier {
 
       if (result != null) {
         _user = result;
+        _resetExpiredSessionState();
         _errorMessage = '';
         return true;
       }
 
       _user = null;
+      return false;
+    } on UnauthorizedException catch (e) {
+      markSessionExpired(e.message);
       return false;
     } catch (e) {
       _errorMessage = _cleanErrorMessage(e);
@@ -169,27 +209,107 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Dipakai SplashScreen ketika aplikasi dimulai.
+  ///
+  /// Kondisi yang dibedakan:
+  /// - Tidak ada token: pengguna memang belum login.
+  /// - Token ditolak 401: sesi kedaluwarsa.
+  /// - Token valid: sesi dipulihkan.
   Future<bool> restoreSession() async {
     _setLoading(true);
     _errorMessage = '';
 
+    final bool previouslyAuthenticated = _user != null;
+
     try {
+      final token = await authService.getToken();
+
+      if (token == null || token.isEmpty) {
+        _user = null;
+
+        if (previouslyAuthenticated) {
+          _isSessionExpired = true;
+          _sessionExpiredMessage = defaultSessionExpiredMessage;
+          _errorMessage = _sessionExpiredMessage;
+        } else {
+          _resetExpiredSessionState();
+        }
+
+        return false;
+      }
+
       final UserModel? result = await authService.restoreSession();
 
       if (result != null && result.token.isNotEmpty) {
         _user = result;
+        _resetExpiredSessionState();
         _errorMessage = '';
         return true;
       }
 
       _user = null;
+      _resetExpiredSessionState();
+      return false;
+    } on UnauthorizedException catch (e) {
+      _user = null;
+      _isSessionExpired = true;
+      _sessionExpiredMessage = e.message;
+      _errorMessage = e.message;
       return false;
     } catch (e) {
       _user = null;
+      _resetExpiredSessionState();
       _errorMessage = _cleanErrorMessage(e);
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Dipakai ketika aplikasi kembali dari background.
+  ///
+  /// Gangguan jaringan tidak langsung mengeluarkan pengguna. Hanya respons
+  /// Unauthorized/401 atau token lokal yang hilang yang dianggap sesi berakhir.
+  Future<bool> validateCurrentSession() async {
+    if (_isSessionExpired) {
+      return false;
+    }
+
+    final bool previouslyAuthenticated = _user != null;
+
+    try {
+      final token = await authService.getToken();
+
+      if (token == null || token.isEmpty) {
+        if (previouslyAuthenticated) {
+          markSessionExpired();
+        }
+
+        return false;
+      }
+
+      final UserModel? result = await authService.restoreSession();
+
+      if (result != null && result.token.isNotEmpty) {
+        _user = result;
+        _resetExpiredSessionState();
+        _errorMessage = '';
+        notifyListeners();
+        return true;
+      }
+
+      if (previouslyAuthenticated) {
+        markSessionExpired();
+      }
+
+      return false;
+    } on UnauthorizedException catch (e) {
+      markSessionExpired(e.message);
+      return false;
+    } catch (e) {
+      // Jangan keluarkan pengguna hanya karena internet sedang bermasalah.
+      _errorMessage = _cleanErrorMessage(e);
+      return isAuthenticated;
     }
   }
 

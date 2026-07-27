@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
-use App\Models\AttendanceZone;
+// use App\Models\AttendanceZone;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\EmployeeAttendanceZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -16,38 +17,29 @@ class AttendanceController extends Controller
 {
     private const TOLERANCE_METERS = 10;
 
+    public function __construct(
+        private EmployeeAttendanceZoneService $zoneService
+    ) {}
+
     public function getUserZone(Request $request)
     {
         try {
             $user = $request->user();
 
-            $user->loadMissing('employee.department.attendanceZones');
-
-            $employee = $user->employee;
-
-            if (!$employee || !$employee->department) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Profil karyawan atau departemen tidak ditemukan.'
-                ], 404);
-            }
-
-            $validZoneIds = $employee->department->attendanceZones->pluck('id');
-
-            if ($validZoneIds->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Zona absensi tidak ditemukan untuk departemen ini.'
-                ], 404);
-            }
+            $validZoneIds = $this->getUserAttendanceZoneIds(
+                $user
+            );
 
             $zones = DB::table('attendance_zones')
                 ->whereIn('id', $validZoneIds)
-                ->select(['id', 'name'])
-                ->selectRaw('ST_AsText(area) as area')
+                ->select([
+                    'id',
+                    'name',
+                ])
+                ->selectRaw('ST_AsText(area) AS area')
                 ->orderBy('id')
                 ->get()
-                ->map(function ($zone) {
+                ->map(static function ($zone): array {
                     return [
                         'id' => (int) $zone->id,
                         'name' => $zone->name,
@@ -56,16 +48,76 @@ class AttendanceController extends Controller
                 })
                 ->values();
 
+            $user->loadMissing('employee');
+
+            $zoneSource = $user->employee?->attendance_zone_id !== null
+                ? 'employee'
+                : 'department';
+
             return response()->json([
                 'success' => true,
+                'zone_source' => $zoneSource,
                 'zones' => $zones,
             ]);
-        } catch (\Exception $e) {
+        } catch (\RuntimeException $exception) {
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan sistem: ' . $e->getMessage()
+                'message' => $exception->getMessage(),
+            ], 404);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil zona presensi.',
             ], 500);
         }
+    }
+
+    private function getUserAttendanceZoneIds(User $user): array
+    {
+        $user->loadMissing('employee');
+
+        $employee = $user->employee;
+
+        if (!$employee) {
+            throw new \RuntimeException(
+                'Profil karyawan tidak ditemukan.'
+            );
+        }
+
+        if ($employee->attendance_zone_id !== null) {
+            return [
+                (int) $employee->attendance_zone_id,
+            ];
+        }
+
+        $employee->loadMissing(
+            'department.attendanceZones'
+        );
+
+        if (!$employee->department) {
+            throw new \RuntimeException(
+                'Karyawan tidak terdaftar pada departemen mana pun.'
+            );
+        }
+
+        $zoneIds = $employee
+            ->department
+            ->attendanceZones
+            ->pluck('id')
+            ->map(static fn($zoneId): int => (int) $zoneId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($zoneIds)) {
+            throw new \RuntimeException(
+                'Karyawan dan departemen belum memiliki zona presensi.'
+            );
+        }
+
+        return $zoneIds;
     }
 
     /**
@@ -299,73 +351,107 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Menghasilkan status lokasi yang sama untuk validasi real-time,
-     * validasi sebelum kamera, dan validasi final ketika menyimpan presensi.
+     * Melakukan validasi polygon dan toleransi dalam satu database round trip.
+     *
+     * Alur query:
+     * 1. Membentuk satu titik GPS.
+     * 2. ST_DWithin memilih zona yang berada dalam polygon atau toleransi.
+     * 3. ST_Covers menentukan apakah titik benar-benar berada di polygon.
+     * 4. CASE menghasilkan inside_area atau tolerance_zone.
      */
     private function getLocationValidationResult(
         User $user,
         float $latitude,
         float $longitude
     ): array {
-        $user->loadMissing('employee.department.attendanceZones');
-        $employee = $user->employee;
+        $validZoneIds = $this->getUserAttendanceZoneIds(
+            $user
+        );
 
-        if (!$employee) {
-            throw new \Exception('Profil karyawan tidak ditemukan.');
-        }
-
-        if (!$employee->department) {
-            throw new \Exception('Karyawan tidak terdaftar di departemen manapun.');
-        }
-
-        $validZoneIds = $employee->department->attendanceZones->pluck('id');
-
-        if ($validZoneIds->isEmpty()) {
-            throw new \Exception('Departemen Anda tidak memiliki zona absensi.');
-        }
-
-        // Prioritas pertama: titik benar-benar berada di dalam polygon utama.
-        $insideZone = AttendanceZone::whereIn('id', $validZoneIds)
-            ->whereRaw(
-                'ST_Covers(area, ST_SetSRID(ST_MakePoint(?, ?), 4326))',
-                [$longitude, $latitude]
+        $zonePlaceholders = implode(
+            ', ',
+            array_fill(
+                0,
+                count($validZoneIds),
+                '?'
             )
-            ->first();
+        );
 
-        if ($insideZone) {
+        $sql = <<<SQL
+            WITH point AS (
+                SELECT ST_SetSRID(
+                    ST_MakePoint(?, ?),
+                    4326
+                ) AS geom
+            ),
+            matched_zone AS MATERIALIZED (
+                SELECT
+                    attendance_zones.id,
+                    attendance_zones.name,
+                    CASE
+                        WHEN ST_Covers(
+                            attendance_zones.area,
+                            point.geom
+                        )
+                        THEN 'inside_area'
+                        ELSE 'tolerance_zone'
+                    END AS location_status
+                FROM attendance_zones
+                CROSS JOIN point
+                WHERE attendance_zones.id IN ({$zonePlaceholders})
+                AND ST_DWithin(
+                        attendance_zones.area::geography,
+                        point.geom::geography,
+                        ?
+                )
+            )
+            SELECT
+                id,
+                name,
+                location_status
+            FROM matched_zone
+            ORDER BY
+                CASE location_status
+                    WHEN 'inside_area' THEN 0
+                    ELSE 1
+                END,
+                id
+            LIMIT 1
+        SQL;
+
+        $bindings = [
+            $longitude,
+            $latitude,
+            ...$validZoneIds,
+            self::TOLERANCE_METERS,
+        ];
+
+        $zone = DB::selectOne(
+            $sql,
+            $bindings
+        );
+
+        if (!$zone) {
             return [
-                'is_valid' => true,
-                'location_status' => 'inside_area',
-                'message' => 'Lokasi berada di area presensi.',
-                'zone_id' => $insideZone->id,
-                'zone_name' => $insideZone->name,
+                'is_valid' => false,
+                'location_status' => 'outside_area',
+                'message' => 'Lokasi berada di luar area presensi.',
+                'zone_id' => null,
+                'zone_name' => null,
             ];
         }
 
-        // Prioritas kedua: titik berada di luar polygon, tetapi masih dalam toleransi.
-        $toleranceZone = AttendanceZone::whereIn('id', $validZoneIds)
-            ->whereRaw(
-                'ST_DWithin(area::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)',
-                [$longitude, $latitude, self::TOLERANCE_METERS]
-            )
-            ->first();
-
-        if ($toleranceZone) {
-            return [
-                'is_valid' => true,
-                'location_status' => 'tolerance_zone',
-                'message' => 'Lokasi berada di zona toleransi.',
-                'zone_id' => $toleranceZone->id,
-                'zone_name' => $toleranceZone->name,
-            ];
-        }
+        $isInsideArea =
+            $zone->location_status === 'inside_area';
 
         return [
-            'is_valid' => false,
-            'location_status' => 'outside_area',
-            'message' => 'Lokasi berada di luar area presensi.',
-            'zone_id' => null,
-            'zone_name' => null,
+            'is_valid' => true,
+            'location_status' => $zone->location_status,
+            'message' => $isInsideArea
+                ? 'Lokasi berada di area presensi.'
+                : 'Lokasi berada di zona toleransi.',
+            'zone_id' => (int) $zone->id,
+            'zone_name' => $zone->name,
         ];
     }
 

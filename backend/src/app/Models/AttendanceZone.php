@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
-use App\Models\Department;
 
 class AttendanceZone extends Model
 {
@@ -34,6 +33,11 @@ class AttendanceZone extends Model
                 return DB::raw("ST_SetSRID(ST_GeomFromGeoJSON('$value'), 4326)");
             }
         );
+    }
+
+    public function employees()
+    {
+        return $this->hasMany(Employee::class);
     }
 
     public function attendances()

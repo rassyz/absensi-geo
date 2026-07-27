@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
@@ -57,12 +58,26 @@ class _AttendanceZoneMapData {
 }
 
 class _AttendanceScreenState extends State<AttendanceScreen> {
+  // Pengaturan pemantauan lokasi:
+  // - GPS hanya mengirim pembaruan setelah bergerak sekitar 8 meter.
+  // - API validasi tidak dipanggil lebih cepat dari sekali setiap 5 detik.
+  // - Toleransi lokal harus sama dengan backend AttendanceController.
+  static const int _locationDistanceFilterMeters = 8;
+  static const double _localToleranceMeters = 10;
+  static const Duration _minimumServerValidationInterval = Duration(seconds: 5);
+
   final AttendanceService _attendanceService = AttendanceService();
   final ImagePicker _picker = ImagePicker();
   final MapController _mapController = MapController();
 
   StreamSubscription<Position>? _positionSubscription;
-  Timer? _locationValidationDebounce;
+  Timer? _locationValidationThrottle;
+
+  DateTime? _lastServerValidationAt;
+  Position? _pendingServerValidationPosition;
+
+  bool _serverValidationInFlight = false;
+  String? _lastLocalLocationStatus;
 
   File? _capturedImage;
   Position? _latestPosition;
@@ -102,7 +117,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   @override
   void dispose() {
-    _locationValidationDebounce?.cancel();
+    _locationValidationThrottle?.cancel();
     _positionSubscription?.cancel();
     super.dispose();
   }
@@ -112,8 +127,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     try {
       await _fetchAttendanceZone();
-    } catch (e) {
-      AppLogger.error('API Zone Error', error: e);
+    } catch (error) {
+      AppLogger.error('API Zone Error', error: error);
     }
 
     if (mounted) {
@@ -132,8 +147,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     try {
       await _startRealtimeLocationMonitoring();
-    } catch (e) {
-      AppLogger.error('GPS Error', error: e);
+    } catch (error) {
+      AppLogger.error('GPS Error', error: error);
 
       if (!mounted) return;
 
@@ -142,12 +157,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _isFakeGpsDetected = false;
         _isValidatingLocation = false;
         _locationStatusCode = 'location_error';
-        _locationStatusMessage = AppMessage.toIndonesia(e);
+        _locationStatusMessage = AppMessage.toIndonesia(error);
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppMessage.toIndonesia(e)),
+          content: Text(AppMessage.toIndonesia(error)),
           backgroundColor: AppColors.tertiary[500],
           duration: const Duration(seconds: 4),
         ),
@@ -159,45 +174,47 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.user?.token;
 
-    if (token != null) {
-      final statusData = await _attendanceService.getTodayAttendanceStatus(
-        token,
-      );
-
-      if (statusData != null && statusData['success'] == true && mounted) {
-        setState(() {
-          _hasCheckedIn = statusData['has_checked_in'] ?? false;
-          _hasCheckedOut = statusData['has_checked_out'] ?? false;
-          _isAttendanceBlocked = statusData['is_attendance_blocked'] == true;
-          _attendanceBlockedStatus = statusData['attendance_status']
-              ?.toString();
-          _attendanceBlockedMessage =
-              statusData['attendance_message']?.toString() ?? '';
-
-          _checkInTime =
-              statusData['check_in_time']?.toString() ?? '-- : -- : --';
-          _checkOutTime =
-              statusData['check_out_time']?.toString() ?? '-- : -- : --';
-
-          if (_isAttendanceBlocked) {
-            _isLocationValid = false;
-            _isFakeGpsDetected = false;
-            _isValidatingLocation = false;
-            _locationStatusCode = 'attendance_blocked';
-            _locationStatusMessage = _attendanceBlockedMessage.isNotEmpty
-                ? _attendanceBlockedMessage
-                : 'Presensi hari ini tidak tersedia.';
-          }
-        });
-      }
+    if (token == null || token.isEmpty) {
+      return;
     }
+
+    final statusData = await _attendanceService.getTodayAttendanceStatus(token);
+
+    if (statusData == null || statusData['success'] != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _hasCheckedIn = statusData['has_checked_in'] == true;
+      _hasCheckedOut = statusData['has_checked_out'] == true;
+      _isAttendanceBlocked = statusData['is_attendance_blocked'] == true;
+      _attendanceBlockedStatus = statusData['attendance_status']?.toString();
+      _attendanceBlockedMessage =
+          statusData['attendance_message']?.toString() ?? '';
+
+      _checkInTime = statusData['check_in_time']?.toString() ?? '-- : -- : --';
+      _checkOutTime =
+          statusData['check_out_time']?.toString() ?? '-- : -- : --';
+
+      if (_isAttendanceBlocked) {
+        _isLocationValid = false;
+        _isFakeGpsDetected = false;
+        _isValidatingLocation = false;
+        _locationStatusCode = 'attendance_blocked';
+        _locationStatusMessage = _attendanceBlockedMessage.isNotEmpty
+            ? _attendanceBlockedMessage
+            : 'Presensi hari ini tidak tersedia.';
+      }
+    });
   }
 
   Future<void> _fetchAttendanceZone() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final token = authProvider.user?.token;
 
-    if (token == null || token.isEmpty) return;
+    if (token == null || token.isEmpty) {
+      return;
+    }
 
     final zonesData = await _attendanceService.getUserAttendanceZones(token);
 
@@ -206,7 +223,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           final String area = zone['area']?.toString() ?? '';
           final List<LatLng> points = _parseWktPolygon(area);
 
-          if (points.isEmpty) return null;
+          if (points.isEmpty) {
+            return null;
+          }
 
           return _AttendanceZoneMapData(
             id: _parseZoneId(zone['id']),
@@ -215,13 +234,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           );
         })
         .whereType<_AttendanceZoneMapData>()
-        .toList();
+        .toList(growable: false);
 
     if (!mounted) return;
 
     final allPoints = parsedZones
         .expand<LatLng>((zone) => zone.points)
-        .toList();
+        .toList(growable: false);
 
     setState(() {
       _attendanceZones = parsedZones;
@@ -236,20 +255,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     await _ensureLocationReady();
 
     final Position initialPosition = await _getFreshPosition();
+
     _handleRealtimePosition(initialPosition, validateImmediately: true);
 
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 2,
+      distanceFilter: _locationDistanceFilterMeters,
     );
 
     await _positionSubscription?.cancel();
 
     _positionSubscription =
         Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (position) {
-            _handleRealtimePosition(position);
-          },
+          _handleRealtimePosition,
           onError: (Object error) {
             if (!mounted) return;
 
@@ -286,27 +304,84 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    _scheduleLocationValidation(
-      position,
-      validateImmediately: validateImmediately,
-    );
-  }
-
-  void _scheduleLocationValidation(
-    Position position, {
-    bool validateImmediately = false,
-  }) {
-    _locationValidationDebounce?.cancel();
-
-    if (validateImmediately) {
-      _validateRealtimeLocation(position);
+    // Jika polygon gagal dimuat, aplikasi tetap dapat memakai validasi
+    // backend. Request tetap dibatasi oleh throttle lima detik.
+    if (_attendanceZones.isEmpty) {
+      _scheduleLocationValidation(position);
       return;
     }
 
-    _locationValidationDebounce = Timer(
-      const Duration(seconds: 1),
-      () => _validateRealtimeLocation(position),
-    );
+    // Validasi polygon dilakukan lokal agar UI langsung merespons dan
+    // pergerakan GPS tidak selalu menghasilkan request API.
+    final localResult = _getLocalLocationValidationResult(position);
+    final localStatus = localResult['location_status']?.toString();
+    final statusChanged = localStatus != _lastLocalLocationStatus;
+
+    _lastLocalLocationStatus = localStatus;
+    _applyLocationValidationResult(localResult);
+
+    // API hanya dipanggil saat posisi pertama ditemukan atau status lokal
+    // berubah, dengan interval minimal lima detik.
+    if (validateImmediately || statusChanged) {
+      _scheduleLocationValidation(position);
+    }
+  }
+
+  void _scheduleLocationValidation(Position position) {
+    _pendingServerValidationPosition = position;
+
+    if (_serverValidationInFlight) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final lastValidationAt = _lastServerValidationAt;
+
+    if (lastValidationAt == null) {
+      final latestPosition = _pendingServerValidationPosition;
+      _pendingServerValidationPosition = null;
+
+      if (latestPosition != null) {
+        unawaited(_validateRealtimeLocation(latestPosition));
+      }
+
+      return;
+    }
+
+    final elapsed = now.difference(lastValidationAt);
+
+    if (elapsed >= _minimumServerValidationInterval) {
+      _locationValidationThrottle?.cancel();
+      _locationValidationThrottle = null;
+
+      final latestPosition = _pendingServerValidationPosition;
+      _pendingServerValidationPosition = null;
+
+      if (latestPosition != null) {
+        unawaited(_validateRealtimeLocation(latestPosition));
+      }
+
+      return;
+    }
+
+    // Satu timer cukup. Posisi terbaru disimpan pada
+    // _pendingServerValidationPosition.
+    if (_locationValidationThrottle?.isActive ?? false) {
+      return;
+    }
+
+    final remaining = _minimumServerValidationInterval - elapsed;
+
+    _locationValidationThrottle = Timer(remaining, () {
+      _locationValidationThrottle = null;
+
+      final latestPosition = _pendingServerValidationPosition;
+      _pendingServerValidationPosition = null;
+
+      if (latestPosition != null) {
+        unawaited(_validateRealtimeLocation(latestPosition));
+      }
+    });
   }
 
   Future<void> _validateRealtimeLocation(Position position) async {
@@ -319,6 +394,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     if (position.isMocked) {
       _setFakeGpsStatus();
+      return;
+    }
+
+    if (_serverValidationInFlight) {
+      _pendingServerValidationPosition = position;
       return;
     }
 
@@ -338,13 +418,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
 
     final int requestId = ++_locationValidationRequestId;
+    final String? localStatusAtRequest = _lastLocalLocationStatus;
 
-    setState(() {
-      _isFakeGpsDetected = false;
-      _isValidatingLocation = true;
-      _locationStatusCode = 'loading';
-      _locationStatusMessage = 'Memvalidasi lokasi terkini...';
-    });
+    _serverValidationInFlight = true;
+    _lastServerValidationAt = DateTime.now();
 
     try {
       final result = await _attendanceService.validateAttendanceLocation(
@@ -353,20 +430,252 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         longitude: position.longitude,
       );
 
-      if (!mounted || requestId != _locationValidationRequestId) return;
+      if (!mounted || requestId != _locationValidationRequestId) {
+        return;
+      }
+
+      // Status cuti/alpa dari backend selalu diprioritaskan.
+      if (result['is_attendance_blocked'] == true) {
+        _applyLocationValidationResult(result);
+        return;
+      }
+
+      // Respons lama diabaikan apabila status lokal telah berubah selama
+      // request berlangsung.
+      if (localStatusAtRequest != _lastLocalLocationStatus) {
+        return;
+      }
+
+      final newestPosition = _latestPosition;
+
+      if (newestPosition != null) {
+        final movedDistance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          newestPosition.latitude,
+          newestPosition.longitude,
+        );
+
+        // Hindari respons lokasi lama menimpa status lokasi terbaru.
+        if (movedDistance > _locationDistanceFilterMeters * 2) {
+          return;
+        }
+      }
 
       _applyLocationValidationResult(result);
-    } catch (e) {
-      if (!mounted || requestId != _locationValidationRequestId) return;
+    } catch (error) {
+      // Hasil lokal tetap dipakai saat endpoint validasi sementara gagal.
+      // Backend tetap memvalidasi ulang saat check-in/check-out.
+      AppLogger.error('Server Location Validation Error', error: error);
+    } finally {
+      _serverValidationInFlight = false;
 
-      setState(() {
-        _isLocationValid = false;
-        _isFakeGpsDetected = false;
-        _isValidatingLocation = false;
-        _locationStatusCode = 'location_error';
-        _locationStatusMessage = AppMessage.toIndonesia(e);
-      });
+      if (!mounted) {
+        _pendingServerValidationPosition = null;
+      } else {
+        final pendingPosition = _pendingServerValidationPosition;
+
+        if (pendingPosition != null) {
+          _scheduleLocationValidation(pendingPosition);
+        }
+      }
     }
+  }
+
+  Map<String, dynamic> _getLocalLocationValidationResult(Position position) {
+    if (_attendanceZones.isEmpty) {
+      return {
+        'success': true,
+        'is_valid': false,
+        'location_status': 'location_error',
+        'message': 'Zona presensi belum tersedia.',
+        'zone_id': null,
+        'zone_name': null,
+        'is_attendance_blocked': false,
+      };
+    }
+
+    final point = LatLng(position.latitude, position.longitude);
+
+    _AttendanceZoneMapData? nearestToleranceZone;
+    double nearestToleranceDistance = double.infinity;
+
+    for (final zone in _attendanceZones) {
+      if (_isPointInsidePolygon(point, zone.points)) {
+        return {
+          'success': true,
+          'is_valid': true,
+          'location_status': 'inside_area',
+          'message': 'Lokasi berada di area presensi.',
+          'zone_id': zone.id,
+          'zone_name': zone.name,
+          'is_attendance_blocked': false,
+        };
+      }
+
+      final distanceToPolygon = _minimumDistanceToPolygonMeters(
+        point,
+        zone.points,
+      );
+
+      if (distanceToPolygon <= _localToleranceMeters &&
+          distanceToPolygon < nearestToleranceDistance) {
+        nearestToleranceDistance = distanceToPolygon;
+        nearestToleranceZone = zone;
+      }
+    }
+
+    if (nearestToleranceZone != null) {
+      return {
+        'success': true,
+        'is_valid': true,
+        'location_status': 'tolerance_zone',
+        'message': 'Lokasi berada di zona toleransi.',
+        'zone_id': nearestToleranceZone.id,
+        'zone_name': nearestToleranceZone.name,
+        'is_attendance_blocked': false,
+      };
+    }
+
+    return {
+      'success': true,
+      'is_valid': false,
+      'location_status': 'outside_area',
+      'message': 'Lokasi berada di luar area presensi.',
+      'zone_id': null,
+      'zone_name': null,
+      'is_attendance_blocked': false,
+    };
+  }
+
+  bool _isPointInsidePolygon(LatLng point, List<LatLng> polygon) {
+    if (polygon.length < 3) {
+      return false;
+    }
+
+    // Titik pada garis batas dianggap berada di dalam polygon agar hasil
+    // lokal mendekati perilaku ST_Covers pada PostGIS.
+    for (int index = 0; index < polygon.length; index++) {
+      final nextIndex = (index + 1) % polygon.length;
+
+      if (_distancePointToSegmentMeters(
+            point,
+            polygon[index],
+            polygon[nextIndex],
+          ) <=
+          0.5) {
+        return true;
+      }
+    }
+
+    bool isInside = false;
+    final double pointX = point.longitude;
+    final double pointY = point.latitude;
+    int previousIndex = polygon.length - 1;
+
+    for (int currentIndex = 0; currentIndex < polygon.length; currentIndex++) {
+      final currentPoint = polygon[currentIndex];
+      final previousPoint = polygon[previousIndex];
+
+      final double currentX = currentPoint.longitude;
+      final double currentY = currentPoint.latitude;
+      final double previousX = previousPoint.longitude;
+      final double previousY = previousPoint.latitude;
+
+      final bool crossesLatitude = (currentY > pointY) != (previousY > pointY);
+
+      if (crossesLatitude) {
+        final double longitudeAtLatitude =
+            (previousX - currentX) *
+                (pointY - currentY) /
+                (previousY - currentY) +
+            currentX;
+
+        if (pointX < longitudeAtLatitude) {
+          isInside = !isInside;
+        }
+      }
+
+      previousIndex = currentIndex;
+    }
+
+    return isInside;
+  }
+
+  double _minimumDistanceToPolygonMeters(LatLng point, List<LatLng> polygon) {
+    if (polygon.isEmpty) {
+      return double.infinity;
+    }
+
+    if (polygon.length == 1) {
+      return Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        polygon.first.latitude,
+        polygon.first.longitude,
+      );
+    }
+
+    double minimumDistance = double.infinity;
+
+    for (int index = 0; index < polygon.length; index++) {
+      final nextIndex = (index + 1) % polygon.length;
+      final distance = _distancePointToSegmentMeters(
+        point,
+        polygon[index],
+        polygon[nextIndex],
+      );
+
+      minimumDistance = math.min(minimumDistance, distance).toDouble();
+    }
+
+    return minimumDistance;
+  }
+
+  double _distancePointToSegmentMeters(
+    LatLng point,
+    LatLng segmentStart,
+    LatLng segmentEnd,
+  ) {
+    const double earthRadiusMeters = 6371000;
+
+    final double latitudeReferenceRadians = point.latitude * math.pi / 180;
+
+    double projectX(double longitude) {
+      return (longitude - point.longitude) *
+          math.pi /
+          180 *
+          earthRadiusMeters *
+          math.cos(latitudeReferenceRadians);
+    }
+
+    double projectY(double latitude) {
+      return (latitude - point.latitude) * math.pi / 180 * earthRadiusMeters;
+    }
+
+    final double startX = projectX(segmentStart.longitude);
+    final double startY = projectY(segmentStart.latitude);
+    final double endX = projectX(segmentEnd.longitude);
+    final double endY = projectY(segmentEnd.latitude);
+
+    final double segmentX = endX - startX;
+    final double segmentY = endY - startY;
+    final double segmentLengthSquared =
+        segmentX * segmentX + segmentY * segmentY;
+
+    if (segmentLengthSquared == 0) {
+      return math.sqrt(startX * startX + startY * startY);
+    }
+
+    final double projection =
+        (-(startX * segmentX + startY * segmentY) / segmentLengthSquared)
+            .clamp(0.0, 1.0)
+            .toDouble();
+
+    final double closestX = startX + projection * segmentX;
+    final double closestY = startY + projection * segmentY;
+
+    return math.sqrt(closestX * closestX + closestY * closestY);
   }
 
   void _applyLocationValidationResult(Map<String, dynamic> result) {
@@ -381,6 +690,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         (isValid
             ? 'Lokasi berada di area presensi.'
             : 'Lokasi berada di luar area presensi.');
+
+    if (isAttendanceBlocked) {
+      _locationValidationThrottle?.cancel();
+      _locationValidationThrottle = null;
+      _pendingServerValidationPosition = null;
+    }
 
     setState(() {
       if (isAttendanceBlocked) {
@@ -404,7 +719,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _applyAttendanceBlockedStatus() {
-    _locationValidationDebounce?.cancel();
+    _locationValidationThrottle?.cancel();
+    _locationValidationThrottle = null;
+    _pendingServerValidationPosition = null;
     _locationValidationRequestId++;
 
     if (!mounted) return;
@@ -421,8 +738,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _setFakeGpsStatus() {
-    _locationValidationDebounce?.cancel();
-    _positionSubscription?.cancel();
+    _locationValidationThrottle?.cancel();
+    _locationValidationThrottle = null;
+    _pendingServerValidationPosition = null;
+
+    unawaited(_positionSubscription?.cancel());
     _locationValidationRequestId++;
 
     if (!mounted) return;
@@ -450,7 +770,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    if (_isProcessingAttendance) return;
+    if (_isProcessingAttendance) {
+      return;
+    }
 
     if (_isAttendanceBlocked) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -495,7 +817,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     bool loadingDialogVisible = false;
 
     try {
-      // 1. HAPUS _validatePositionBeforeAction di sini. Langsung buka kamera!
       final bool isCheckIn = !_hasCheckedIn;
 
       final XFile? photo = await _picker.pickImage(
@@ -506,26 +827,76 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         maxHeight: 1080,
       );
 
-      if (photo == null) return;
-      if (!mounted) return;
+      if (photo == null || !mounted) {
+        return;
+      }
 
       setState(() {
         _capturedImage = File(photo.path);
       });
 
-      showDialog(
+      showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (context) {
+          return const Center(child: CircularProgressIndicator());
+        },
       );
       loadingDialogVisible = true;
 
-      // 2. Ambil titik kordinat PALING BARU tepat setelah foto diambil
-      Position latestPosition = await _getFreshPosition();
+      // Koordinat terbaru diambil setelah kamera ditutup agar lokasi yang
+      // dikirim adalah lokasi saat pengguna benar-benar melakukan presensi.
+      final Position latestPosition = await _getFreshPosition();
+
+      if (!mounted) {
+        return;
+      }
+
       _updateLatestPositionMarker(latestPosition);
 
-      // 3. HAPUS _validatePositionBeforeAction di sini.
-      // Langsung tembak ke fungsi Submit! Biarkan backend (Laravel) yang memvalidasi.
+      if (latestPosition.isMocked) {
+        if (loadingDialogVisible) {
+          Navigator.of(context, rootNavigator: true).pop();
+          loadingDialogVisible = false;
+        }
+
+        _setFakeGpsStatus();
+        return;
+      }
+
+      // Cek lokal mencegah upload foto apabila pengguna sudah berpindah ke
+      // luar zona selama proses mengambil foto. Jika polygon tidak tersedia,
+      // request langsung diteruskan agar backend tetap menjadi sumber final.
+      if (_attendanceZones.isNotEmpty) {
+        final latestLocalValidation = _getLocalLocationValidationResult(
+          latestPosition,
+        );
+
+        _lastLocalLocationStatus = latestLocalValidation['location_status']
+            ?.toString();
+        _applyLocationValidationResult(latestLocalValidation);
+
+        if (latestLocalValidation['is_valid'] != true) {
+          if (loadingDialogVisible) {
+            Navigator.of(context, rootNavigator: true).pop();
+            loadingDialogVisible = false;
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                latestLocalValidation['message']?.toString() ??
+                    'Lokasi berada di luar area presensi.',
+              ),
+              backgroundColor: AppColors.tertiary[500],
+            ),
+          );
+          return;
+        }
+      }
+
+      // Backend tetap menjadi sumber validasi final. Laravel akan menjalankan
+      // pengecekan PostGIS sebelum menyimpan check-in/check-out.
       final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,
@@ -534,7 +905,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         isCheckIn: isCheckIn,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (loadingDialogVisible) {
         Navigator.of(context, rootNavigator: true).pop();
@@ -579,7 +952,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               : AppColors.tertiary[500],
         ),
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
 
       if (loadingDialogVisible) {
@@ -589,7 +962,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppMessage.toIndonesia(e)),
+          content: Text(AppMessage.toIndonesia(error)),
           backgroundColor: AppColors.tertiary[500],
         ),
       );
@@ -622,16 +995,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     try {
       final position = await _getFreshPosition();
+
       _handleRealtimePosition(position, validateImmediately: true);
 
       if (_latestPosition != null) {
         _mapController.move(
           LatLng(_latestPosition!.latitude, _latestPosition!.longitude),
-          17.0,
+          17,
         );
       }
-    } catch (e) {
-      AppLogger.error('Recenter Error', error: e);
+    } catch (error) {
+      AppLogger.error('Recenter Error', error: error);
     }
   }
 
@@ -686,10 +1060,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.user;
-
     final employee = user?.employee;
-    String displayPosition = 'Employee';
 
+    String displayPosition = 'Employee';
     final String? avatarUrl = user?.avatarUrl;
 
     if (employee != null) {
@@ -799,19 +1172,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     final allZonePoints = _attendanceZones
         .expand<LatLng>((zone) => zone.points)
-        .toList();
+        .toList(growable: false);
 
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
         initialCenter: _officeLocation!,
-        initialZoom: 17.0,
+        initialZoom: 17,
         initialCameraFit: allZonePoints.isEmpty
             ? null
             : CameraFit.coordinates(
                 coordinates: allZonePoints,
                 padding: const EdgeInsets.fromLTRB(32, 100, 32, 320),
-                maxZoom: 17.0,
+                maxZoom: 17,
               ),
       ),
       children: [
@@ -821,14 +1194,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         ),
         if (_attendanceZones.isNotEmpty)
           PolygonLayer(
-            polygons: _attendanceZones.map((zone) {
-              return Polygon(
-                points: zone.points,
-                color: AppColors.primary[500]!.withValues(alpha: 0.15),
-                borderColor: AppColors.primary[500]!,
-                borderStrokeWidth: 2.0,
-              );
-            }).toList(),
+            polygons: _attendanceZones
+                .map((zone) {
+                  return Polygon(
+                    points: zone.points,
+                    color: AppColors.primary[500]!.withValues(alpha: 0.15),
+                    borderColor: AppColors.primary[500]!,
+                    borderStrokeWidth: 2,
+                  );
+                })
+                .toList(growable: false),
           ),
         MarkerLayer(
           markers: [
@@ -1182,32 +1557,43 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   List<LatLng> _parseWktPolygon(String wkt) {
-    List<LatLng> points = [];
+    final List<LatLng> points = [];
 
     try {
       final String coordsString = wkt
           .replaceAll(RegExp(r'[A-Za-z\(\)]'), '')
           .trim();
+
       final List<String> pairs = coordsString.split(',');
 
-      for (String pair in pairs) {
-        final List<String> coords = pair.trim().split(RegExp(r'\s+'));
+      for (final pair in pairs) {
+        final List<String> coordinates = pair.trim().split(RegExp(r'\s+'));
 
-        if (coords.length == 2) {
-          final double lng = double.parse(coords[0]);
-          final double lat = double.parse(coords[1]);
-          points.add(LatLng(lat, lng));
+        if (coordinates.length != 2) {
+          continue;
         }
+
+        final double? longitude = double.tryParse(coordinates[0]);
+        final double? latitude = double.tryParse(coordinates[1]);
+
+        if (longitude == null || latitude == null) {
+          continue;
+        }
+
+        points.add(LatLng(latitude, longitude));
       }
-    } catch (e) {
-      AppLogger.error('Error parsing polygon', error: e);
+    } catch (error) {
+      AppLogger.error('Error parsing polygon', error: error);
     }
 
     return points;
   }
 
   int _parseZoneId(dynamic value) {
-    if (value is int) return value;
+    if (value is int) {
+      return value;
+    }
+
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
@@ -1216,15 +1602,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return const LatLng(-6.200000, 106.816666);
     }
 
-    double latSum = 0;
-    double lngSum = 0;
+    double latitudeSum = 0;
+    double longitudeSum = 0;
 
     for (final point in points) {
-      latSum += point.latitude;
-      lngSum += point.longitude;
+      latitudeSum += point.latitude;
+      longitudeSum += point.longitude;
     }
 
-    return LatLng(latSum / points.length, lngSum / points.length);
+    return LatLng(latitudeSum / points.length, longitudeSum / points.length);
   }
 
   Future<void> _ensureLocationReady() async {
@@ -1265,9 +1651,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 }
 
 class DottedLinePainter extends CustomPainter {
-  final Color color;
-
   DottedLinePainter({required this.color});
+
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1275,12 +1661,13 @@ class DottedLinePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 1.5;
 
-    const double dashHeight = 3.0;
-    const double dashSpace = 3.0;
+    const double dashHeight = 3;
+    const double dashSpace = 3;
     double startY = 0;
 
     while (startY < size.height) {
       canvas.drawLine(Offset(0, startY), Offset(0, startY + dashHeight), paint);
+
       startY += dashHeight + dashSpace;
     }
   }

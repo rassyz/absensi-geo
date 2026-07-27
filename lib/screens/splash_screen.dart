@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/auth_provider.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -23,17 +24,28 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    final isLoggedIn = await authProvider.restoreSession();
+    final authProvider = context.read<AuthProvider>();
+    final bool isLoggedIn = await authProvider.restoreSession();
 
     if (!mounted) return;
 
-    if (isLoggedIn) {
-      Navigator.pushReplacementNamed(context, '/main');
-    } else {
-      Navigator.pushReplacementNamed(context, '/login');
+    /*
+     * Token valid:
+     *   Masuk ke MainScreen.
+     *
+     * Token kedaluwarsa:
+     *   Tetap masuk ke MainScreen agar Home terlihat dan dialog sesi
+     *   kedaluwarsa dapat ditampilkan.
+     *
+     * Belum pernah login:
+     *   Langsung ke halaman Login.
+     */
+    if (isLoggedIn || authProvider.isSessionExpired) {
+      Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+      return;
     }
+
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   @override

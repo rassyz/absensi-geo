@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_exception.dart';
 
 class BaseApiService {
+  static final http.Client _client = http.Client();
   // static const String baseUrl = "https://gallery-wham-jaunt.ngrok-free.dev/api";
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
@@ -107,7 +108,7 @@ class BaseApiService {
     bool useAuth = true,
   }) async {
     return _guardRequest(() async {
-      final response = await http
+      final response = await _client
           .get(
             buildUri(endpoint, queryParameters),
             headers: useAuth
@@ -127,7 +128,7 @@ class BaseApiService {
     bool useAuth = true,
   }) async {
     return _guardRequest(() async {
-      final response = await http
+      final response = await _client
           .post(
             buildUri(endpoint),
             headers: useAuth
@@ -148,7 +149,7 @@ class BaseApiService {
     bool useAuth = true,
   }) async {
     return _guardRequest(() async {
-      final response = await http
+      final response = await _client
           .put(
             buildUri(endpoint),
             headers: useAuth
@@ -169,7 +170,7 @@ class BaseApiService {
     bool useAuth = true,
   }) async {
     return _guardRequest(() async {
-      final response = await http
+      final response = await _client
           .delete(
             buildUri(endpoint),
             headers: useAuth
@@ -204,7 +205,9 @@ class BaseApiService {
         }
       }
 
-      final streamedResponse = await request.send().timeout(multipartTimeout);
+      final streamedResponse = await _client
+          .send(request)
+          .timeout(multipartTimeout);
       final response = await http.Response.fromStream(streamedResponse);
 
       return _handleResponse(response);

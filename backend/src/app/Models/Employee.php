@@ -9,6 +9,7 @@ class Employee extends Model
     protected $fillable = [
         'user_id',
         'department_id',
+        'attendance_zone_id',
         'full_name',
         'employee_number',
         'position',
@@ -26,6 +27,12 @@ class Employee extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    // Relasi Many-to-One dengan AttendanceZone
+    public function attendanceZone()
+    {
+        return $this->belongsTo(AttendanceZone::class);
     }
 
     public function attendances()
@@ -47,11 +54,17 @@ class Employee extends Model
     public function overtimes()
     {
         return $this->belongsToMany(Overtime::class, 'overtime_employees')
-                    ->withPivot([
-                        'id', 'status', 'check_in', 'check_in_latitude', 'check_in_longitude',
-                        'check_out', 'check_out_latitude', 'check_out_longitude'
-                    ])
-                    ->withTimestamps();
+            ->withPivot([
+                'id',
+                'status',
+                'check_in',
+                'check_in_latitude',
+                'check_in_longitude',
+                'check_out',
+                'check_out_latitude',
+                'check_out_longitude'
+            ])
+            ->withTimestamps();
     }
 
     public function overtimeEmployees()

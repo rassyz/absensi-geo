@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('attendance:mark-absences')->dailyAt('17:59');
+
+Schedule::command('sanctum:prune-expired --hours=24')
+    ->dailyAt('02:00')
+    ->withoutOverlapping();

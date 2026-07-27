@@ -2,7 +2,6 @@
 
 namespace App\Filament\Admin\Resources\Employees\Schemas;
 
-use Dom\Text;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
@@ -26,6 +25,16 @@ class EmployeeForm
                     ->relationship('department', 'name')
                     ->placeholder('Pilih Departemen')
                     ->required(),
+                Select::make('attendance_zone_id')
+                    ->label('Zona Presensi Khusus')
+                    ->relationship('attendanceZone', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->nullable()
+                    ->placeholder('Mengikuti zona departemen')
+                    ->helperText(
+                        'Opsional. Jika dipilih, karyawan hanya dapat presensi pada zona ini.'
+                    ),
                 TextInput::make('full_name')
                     ->label('Nama Lengkap')
                     ->required(),

@@ -32,6 +32,25 @@ class EmployeesTable
                     ->sortable()
                     ->searchable(),
 
+                TextColumn::make('attendance_zone_id')
+                    ->label('Aturan Zona')
+                    ->formatStateUsing(
+                        fn($state): string => filled($state)
+                            ? 'Khusus Karyawan'
+                            : 'Departemen'
+                    )
+                    ->badge()
+                    ->color(
+                        fn($state): string => filled($state)
+                            ? 'warning'
+                            : 'success'
+                    ),
+
+                TextColumn::make('attendanceZone.name')
+                    ->label('Zona Khusus')
+                    ->placeholder('Mengikuti departemen')
+                    ->searchable(),
+
                 TextColumn::make('employee_number')
                     ->label('Nomor Karyawan')
                     ->sortable()
