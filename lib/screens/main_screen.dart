@@ -1,15 +1,13 @@
-// lib/screens/main_screen.dart
-
 import 'dart:async';
 
+import 'package:absensi_geo/models/notification_intent.dart';
 import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
 import 'package:absensi_geo/screens/attendance_screen.dart';
 import 'package:absensi_geo/screens/home_screen.dart';
 import 'package:absensi_geo/screens/leave_request_screen.dart';
-import 'package:absensi_geo/screens/notification_splash_screen.dart';
 import 'package:absensi_geo/screens/profile_screen.dart';
-import 'package:absensi_geo/services/notification_service.dart';
+import 'package:absensi_geo/services/notification_navigation_service.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:absensi_geo/widgets/custom_bottom_nav.dart';
 import 'package:flutter/material.dart';
@@ -26,10 +24,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
   bool _isCheckingSession = false;
-  bool _isOpeningNotificationFlow = false;
 
-  StreamSubscription<NotificationDestination>?
-  _notificationNavigationSubscription;
+  /*
+   * Menjaga agar halaman presensi tidak dibuka berulang kali apabila:
+   * - pengguna menekan notifikasi beberapa kali;
+   * - notifikasi masuk hampir bersamaan;
+   * - tombol presensi ditekan ketika route presensi masih terbuka.
+   */
+  bool _isAttendanceRouteOpen = false;
+
+  StreamSubscription<NotificationIntent>? _notificationNavigationSubscription;
+
+  AuthProvider? _authProvider;
+
+  final NotificationNavigationService _notificationNavigationService =
+      NotificationNavigationService.instance;
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -46,25 +55,62 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     /*
-     * Hanya menangani klik notifikasi ketika aplikasi sudah hidup:
-     * foreground atau background.
-     *
-     * Kondisi terminated tidak masuk ke listener ini sebagai navigasi.
-     * Terminated selalu menjalankan SplashScreen normal.
+     * Listener hanya menerima intent setelah NotificationNavigationService
+     * menilai MainScreen dan sesi pengguna sudah siap.
      */
-    _notificationNavigationSubscription = NotificationService
-        .instance
-        .navigationRequests
-        .listen((NotificationDestination destination) {
-          if (destination == NotificationDestination.attendance) {
-            unawaited(_openNotificationFlow());
-          }
+    _notificationNavigationSubscription = _notificationNavigationService.intents
+        .listen((NotificationIntent intent) {
+          unawaited(_handleNotificationIntent(intent));
         });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final AuthProvider currentAuthProvider = context.read<AuthProvider>();
+
+    if (identical(_authProvider, currentAuthProvider)) {
+      return;
+    }
+
+    _authProvider?.removeListener(_handleAuthStateChanged);
+
+    _authProvider = currentAuthProvider;
+    _authProvider?.addListener(_handleAuthStateChanged);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      final ModalRoute<dynamic>? route = ModalRoute.of(context);
+
+      if (route != null && route.animation != null) {
+        if (route.animation!.isCompleted) {
+          // Jika animasi sudah selesai, langsung sinkronisasi
+          _syncNotificationConsumerState();
+        } else {
+          // Jika masih animasi, tunggu sampai statusnya completed
+          route.animation!.addStatusListener((AnimationStatus status) {
+            if (status == AnimationStatus.completed) {
+              if (mounted) _syncNotificationConsumerState();
+            }
+          });
+        }
+      } else {
+        // Fallback jika tidak terdeteksi adanya animasi rute
+        _syncNotificationConsumerState();
+      }
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+
+    _authProvider?.removeListener(_handleAuthStateChanged);
+    _notificationNavigationService.markConsumerNotReady();
 
     unawaited(_notificationNavigationSubscription?.cancel());
 
@@ -76,7 +122,87 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.resumed) {
-      _validateSessionAfterResume();
+      unawaited(_validateSessionAfterResume());
+    }
+  }
+
+  void _handleAuthStateChanged() {
+    if (!mounted) {
+      return;
+    }
+
+    _syncNotificationConsumerState();
+  }
+
+  void _syncNotificationConsumerState() {
+    final AuthProvider? authProvider = _authProvider;
+
+    final bool canHandleNotification =
+        authProvider != null &&
+        authProvider.isAuthenticated &&
+        !authProvider.isSessionExpired;
+
+    if (canHandleNotification) {
+      _notificationNavigationService.markConsumerReady();
+    } else {
+      _notificationNavigationService.markConsumerNotReady();
+    }
+  }
+
+  Future<void> _handleNotificationIntent(NotificationIntent intent) async {
+    if (!mounted) {
+      _notificationNavigationService.defer(intent);
+      return;
+    }
+
+    final AuthProvider authProvider = context.read<AuthProvider>();
+
+    if (!authProvider.isAuthenticated || authProvider.isSessionExpired) {
+      /*
+       * Intent dikembalikan ke antrean. Setelah login berhasil dan
+       * MainScreen aktif kembali, intent akan diproses ulang.
+       */
+      _notificationNavigationService.defer(intent);
+      return;
+    }
+
+    switch (intent.destination) {
+      case NotificationDestination.attendance:
+        await _openAttendanceScreen();
+    }
+  }
+
+  /*
+   * Dipakai oleh:
+   * 1. klik push notification;
+   * 2. tombol presensi/FAB.
+   *
+   * AttendanceScreen dibuka sebagai route penuh di atas MainScreen.
+   * Karena itu bottom navigation bar milik MainScreen tidak terlihat.
+   * Saat tombol Back ditekan, pengguna kembali ke halaman utama sebelumnya.
+   */
+  Future<void> _openAttendanceScreen() async {
+    if (!mounted || _isAttendanceRouteOpen) {
+      return;
+    }
+
+    final AuthProvider authProvider = context.read<AuthProvider>();
+
+    if (!authProvider.isAuthenticated || authProvider.isSessionExpired) {
+      return;
+    }
+
+    _isAttendanceRouteOpen = true;
+
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const AttendanceScreen(),
+          settings: const RouteSettings(name: '/attendance'),
+        ),
+      );
+    } finally {
+      _isAttendanceRouteOpen = false;
     }
   }
 
@@ -91,31 +217,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       await context.read<AuthProvider>().validateCurrentSession();
     } finally {
       _isCheckingSession = false;
-    }
-  }
-
-  Future<void> _openNotificationFlow() async {
-    if (!mounted || _isOpeningNotificationFlow) {
-      return;
-    }
-
-    final AuthProvider authProvider = context.read<AuthProvider>();
-
-    if (!authProvider.isAuthenticated) {
-      return;
-    }
-
-    _isOpeningNotificationFlow = true;
-
-    try {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => const NotificationSplashScreen(),
-          settings: const RouteSettings(name: '/notification-splash'),
-        ),
-      );
-    } finally {
-      _isOpeningNotificationFlow = false;
     }
   }
 
@@ -134,12 +235,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void _goToLogin(AuthProvider authProvider) {
     authProvider.clearSessionExpiredNotice();
 
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
     final AuthProvider authProvider = context.watch<AuthProvider>();
+
     final bool isSessionExpired = authProvider.isSessionExpired;
 
     final int visibleIndex = isSessionExpired ? 0 : _selectedIndex;
@@ -159,12 +263,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         floatingActionButton: isSessionExpired
             ? null
             : FloatingActionButton(
+                /*
+                   * Menggunakan method yang sama dengan notifikasi agar
+                   * perilaku dan proteksi double-navigation konsisten.
+                   */
                 onPressed: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const AttendanceScreen(),
-                    ),
-                  );
+                  unawaited(_openAttendanceScreen());
                 },
                 backgroundColor: const Color(0xFF2F80ED),
                 elevation: 0,

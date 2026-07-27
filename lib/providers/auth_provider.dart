@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import 'dart:async';
+
 import '../models/user_model.dart';
 import '../services/api_exception.dart';
 import '../services/auth_service.dart';
@@ -120,7 +122,7 @@ class AuthProvider extends ChangeNotifier {
         _resetExpiredSessionState();
         _errorMessage = '';
 
-        await NotificationService.instance.syncCurrentToken();
+        unawaited(NotificationService.instance.activateForAuthenticatedUser());
 
         return true;
       }
@@ -253,7 +255,7 @@ class AuthProvider extends ChangeNotifier {
         _resetExpiredSessionState();
         _errorMessage = '';
 
-        await NotificationService.instance.syncCurrentToken();
+        unawaited(NotificationService.instance.activateForAuthenticatedUser());
 
         return true;
       }

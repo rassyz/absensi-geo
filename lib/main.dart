@@ -24,6 +24,13 @@ import 'package:absensi_geo/services/notification_service.dart';
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  /*
+   * Jangan melakukan navigasi, mengakses BuildContext, atau menampilkan UI
+   * dari background isolate. Interaksi pengguna diproses oleh:
+   * - getInitialMessage() untuk terminated;
+   * - onMessageOpenedApp untuk background.
+   */
 }
 
 Future<void> main() async {
@@ -35,19 +42,15 @@ Future<void> main() async {
 
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
+  /*
+   * Bootstrap notifikasi harus selesai sebelum runApp agar intent yang
+   * membuka aplikasi dari kondisi terminated tidak hilang.
+   *
+   * Service hanya menangkap dan mengantrekan intent. Navigasi baru dilakukan
+   * setelah MainScreen dan sesi autentikasi benar-benar siap.
+   */
   await NotificationService.instance.initialize();
 
-  /*
-   * Penting:
-   * Jangan memanggil FirebaseMessaging.getInitialMessage() di sini.
-   *
-   * Ketika aplikasi terminated lalu notifikasi ditekan, aplikasi
-   * dibiarkan memulai alur normal:
-   * SplashScreen -> restore session -> MainScreen.
-   *
-   * Ini mencegah navigasi bersamaan saat MaterialApp dan Navigator
-   * root masih dibangun.
-   */
   final AuthService authService = AuthService();
 
   runApp(
@@ -64,6 +67,7 @@ Future<void> main() async {
   );
 }
 
+// Di main.dart (dalam class MyApp)
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 

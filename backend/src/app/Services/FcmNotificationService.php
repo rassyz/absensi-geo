@@ -6,6 +6,7 @@ use App\Models\DeviceToken;
 use Illuminate\Support\Facades\Log;
 use Kreait\Firebase\Exception\Messaging\NotFound;
 use Kreait\Firebase\Exception\MessagingException;
+use Kreait\Firebase\Messaging\AndroidConfig;
 use Kreait\Firebase\Messaging\CloudMessage;
 use Kreait\Firebase\Messaging\Notification;
 use Kreait\Laravel\Firebase\Facades\Firebase;
@@ -13,6 +14,10 @@ use Throwable;
 
 class FcmNotificationService
 {
+    private const ANDROID_CHANNEL_ID = 'attendance_reminder';
+
+    private const ANDROID_NOTIFICATION_ICON = 'ic_stat_attendify';
+
     public function sendToToken(
         string $token,
         string $title,
@@ -28,6 +33,15 @@ class FcmNotificationService
                 )
                 ->all();
 
+            $androidConfig = AndroidConfig::fromArray([
+                'priority' => 'high',
+                'notification' => [
+                    'channel_id' => self::ANDROID_CHANNEL_ID,
+                    'icon' => self::ANDROID_NOTIFICATION_ICON,
+                    'sound' => 'default',
+                ],
+            ]);
+
             $message = CloudMessage::new()
                 ->withToken($token)
                 ->withNotification(
@@ -36,14 +50,13 @@ class FcmNotificationService
                         $body
                     )
                 )
-                ->withData($stringData);
+                ->withData($stringData)
+                ->withAndroidConfig($androidConfig);
 
             Firebase::messaging()->send($message);
 
             return true;
         } catch (NotFound $exception) {
-            // Token tidak aktif, aplikasi dihapus, atau token
-            // berasal dari project Firebase yang berbeda.
             DeviceToken::query()
                 ->where('token', $token)
                 ->delete();
@@ -51,10 +64,8 @@ class FcmNotificationService
             Log::warning(
                 'Token FCM tidak valid dan telah dihapus.',
                 [
-                    'token_suffix' =>
-                    substr($token, -12),
-                    'message' =>
-                    $exception->getMessage(),
+                    'token_suffix' => substr($token, -12),
+                    'message' => $exception->getMessage(),
                 ]
             );
 
@@ -63,10 +74,8 @@ class FcmNotificationService
             Log::error(
                 'Firebase Messaging Error',
                 [
-                    'token_suffix' =>
-                    substr($token, -12),
-                    'message' =>
-                    $exception->getMessage(),
+                    'token_suffix' => substr($token, -12),
+                    'message' => $exception->getMessage(),
                 ]
             );
 
@@ -75,10 +84,8 @@ class FcmNotificationService
             Log::error(
                 'Gagal mengirim notifikasi FCM',
                 [
-                    'token_suffix' =>
-                    substr($token, -12),
-                    'message' =>
-                    $exception->getMessage(),
+                    'token_suffix' => substr($token, -12),
+                    'message' => $exception->getMessage(),
                 ]
             );
 

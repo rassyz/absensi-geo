@@ -1,5 +1,3 @@
-// lib/screens/splash_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -18,17 +16,17 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _checkSession();
+
+    /*
+     * Tidak menggunakan delay buatan.
+     * Splash hanya tampil selama pemulihan sesi benar-benar berlangsung.
+     */
+    _restoreSessionAndContinue();
   }
 
-  Future<void> _checkSession() async {
-    await Future<void>.delayed(const Duration(seconds: 2));
-
-    if (!mounted || _navigationHandled) {
-      return;
-    }
-
+  Future<void> _restoreSessionAndContinue() async {
     final AuthProvider authProvider = context.read<AuthProvider>();
+
     final bool isLoggedIn = await authProvider.restoreSession();
 
     if (!mounted || _navigationHandled) {
@@ -38,11 +36,15 @@ class _SplashScreenState extends State<SplashScreen> {
     _navigationHandled = true;
 
     if (isLoggedIn || authProvider.isSessionExpired) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/main', (route) => false);
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/main', (Route<dynamic> route) => false);
       return;
     }
 
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
   }
 
   @override

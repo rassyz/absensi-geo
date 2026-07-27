@@ -6,9 +6,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../models/notification_intent.dart';
 import 'device_token_service.dart';
-
-enum NotificationDestination { attendance }
+import 'notification_navigation_service.dart';
 
 class NotificationService {
   NotificationService._();
@@ -27,24 +27,22 @@ class NotificationService {
 
   final DeviceTokenService _deviceTokenService = DeviceTokenService();
 
-  final StreamController<NotificationDestination> _navigationController =
-      StreamController<NotificationDestination>.broadcast();
+  final NotificationNavigationService _navigationService =
+      NotificationNavigationService.instance;
 
+  Future<void>? _initializationFuture;
+
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _messageOpenedAppSubscription;
   StreamSubscription<String>? _tokenRefreshSubscription;
 
-  bool _initialized = false;
+  bool _authenticatedSessionActive = false;
 
-  Stream<NotificationDestination> get navigationRequests =>
-      _navigationController.stream;
+  Future<void> initialize() {
+    return _initializationFuture ??= _initialize();
+  }
 
-  Future<void> initialize() async {
-    if (_initialized) {
-      return;
-    }
-
-    _initialized = true;
-
-    await _requestPermission();
+  Future<void> _initialize() async {
     await _initializeLocalNotifications();
     await _createAndroidNotificationChannel();
 
@@ -54,88 +52,71 @@ class NotificationService {
       sound: true,
     );
 
-    /*
-     * Foreground:
-     * pesan ditampilkan sebagai local notification.
-     */
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      debugPrint('FCM foreground diterima: ${message.messageId}');
-      await _showForegroundNotification(message);
-    });
+    _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+      _handleForegroundMessage,
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Listener FCM foreground bermasalah: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      },
+    );
 
-    /*
-     * Background:
-     * event hanya diproses saat aplikasi sudah hidup dan MainScreen
-     * sudah berada di widget tree.
-     *
-     * Terminated tidak diproses di sini. Android hanya membuka aplikasi,
-     * lalu aplikasi menjalankan SplashScreen normal.
-     */
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleRemoteMessage);
+    _messageOpenedAppSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+      (RemoteMessage message) {
+        _dispatchRemoteMessage(
+          message,
+          source: NotificationOpenSource.backgroundRemoteNotification,
+        );
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Listener klik FCM background bermasalah: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      },
+    );
 
     _tokenRefreshSubscription = _firebaseMessaging.onTokenRefresh.listen((
       String newToken,
     ) async {
+      if (!_authenticatedSessionActive || newToken.trim().isEmpty) {
+        return;
+      }
+
       try {
         await _deviceTokenService.saveToken(newToken);
-      } catch (error) {
+      } catch (error, stackTrace) {
         debugPrint('Gagal memperbarui token FCM: $error');
+        debugPrintStack(stackTrace: stackTrace);
       }
     });
-  }
 
-  Future<void> _requestPermission() async {
-    final NotificationSettings settings = await _firebaseMessaging
-        .requestPermission(
-          alert: true,
-          announcement: false,
-          badge: true,
-          carPlay: false,
-          criticalAlert: false,
-          provisional: false,
-          sound: true,
-        );
-
-    debugPrint('Status izin notifikasi: ${settings.authorizationStatus}');
-
-    if (!Platform.isAndroid) {
-      return;
-    }
-
-    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        _localNotifications
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
-
-    final bool? granted = await androidImplementation
-        ?.requestNotificationsPermission();
-
-    debugPrint('Izin notifikasi Android: $granted');
+    await _captureTerminatedLaunchIntent();
   }
 
   Future<void> _initializeLocalNotifications() async {
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('ic_stat_attendify');
 
+    const DarwinInitializationSettings darwinSettings =
+        DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        );
+
     const InitializationSettings initializationSettings =
-        InitializationSettings(android: androidSettings);
+        InitializationSettings(
+          android: androidSettings,
+          iOS: darwinSettings,
+          macOS: darwinSettings,
+        );
 
     await _localNotifications.initialize(
       settings: initializationSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        /*
-         * Callback ini dipakai ketika aplikasi masih hidup.
-         * Untuk launch terminated dari local notification, aplikasi tetap
-         * dibiarkan menjalankan SplashScreen normal.
-         */
-        _handleLocalNotificationPayload(response.payload);
-      },
+      onDidReceiveNotificationResponse: _handleRunningLocalNotificationTap,
     );
   }
 
   Future<void> _createAndroidNotificationChannel() async {
-    if (!Platform.isAndroid) {
+    if (kIsWeb || !Platform.isAndroid) {
       return;
     }
 
@@ -157,8 +138,100 @@ class NotificationService {
     await androidImplementation?.createNotificationChannel(channel);
   }
 
-  Future<void> _showForegroundNotification(RemoteMessage message) async {
-    if (!Platform.isAndroid) {
+  /// Dipanggil setelah login atau restore session berhasil.
+  ///
+  /// Proses dibuat terpisah dari bootstrap aplikasi supaya login/navigasi
+  /// tidak menunggu permission dialog dan sinkronisasi token FCM.
+  Future<void> activateForAuthenticatedUser() async {
+    _authenticatedSessionActive = true;
+
+    try {
+      await requestPermission();
+      await syncCurrentToken();
+    } catch (error, stackTrace) {
+      debugPrint('Aktivasi notifikasi pengguna gagal: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> requestPermission() async {
+    if (kIsWeb) {
+      await _firebaseMessaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      return;
+    }
+
+    if (Platform.isAndroid) {
+      final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+          _localNotifications
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >();
+
+      final bool? granted = await androidImplementation
+          ?.requestNotificationsPermission();
+
+      debugPrint('Izin notifikasi Android: $granted');
+      return;
+    }
+
+    final NotificationSettings settings = await _firebaseMessaging
+        .requestPermission(
+          alert: true,
+          announcement: false,
+          badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: true,
+        );
+
+    debugPrint('Status izin notifikasi Apple: ${settings.authorizationStatus}');
+  }
+
+  Future<void> _captureTerminatedLaunchIntent() async {
+    /*
+     * TERMINATED REMOTE:
+     * FCM notification yang membuka aplikasi dari kondisi terminated.
+     */
+    final RemoteMessage? initialRemoteMessage = await _firebaseMessaging
+        .getInitialMessage();
+
+    if (initialRemoteMessage != null) {
+      _dispatchRemoteMessage(
+        initialRemoteMessage,
+        source: NotificationOpenSource.terminatedRemoteNotification,
+      );
+    }
+
+    /*
+     * TERMINATED LOCAL:
+     * Local notification yang pernah dibuat saat foreground, kemudian
+     * ditekan ketika proses aplikasi sudah terminated.
+     */
+    final NotificationAppLaunchDetails? localLaunchDetails =
+        await _localNotifications.getNotificationAppLaunchDetails();
+
+    final bool launchedByLocalNotification =
+        localLaunchDetails?.didNotificationLaunchApp ?? false;
+
+    if (!launchedByLocalNotification) {
+      return;
+    }
+
+    _dispatchPayload(
+      localLaunchDetails?.notificationResponse?.payload,
+      source: NotificationOpenSource.terminatedLocalNotification,
+    );
+  }
+
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    debugPrint('FCM foreground diterima: ${message.messageId}');
+
+    if (kIsWeb || !Platform.isAndroid) {
       return;
     }
 
@@ -190,9 +263,17 @@ class NotificationService {
       android: androidDetails,
     );
 
+    final Map<String, dynamic> payloadData = Map<String, dynamic>.from(
+      message.data,
+    );
+
+    if (message.messageId?.trim().isNotEmpty == true) {
+      payloadData['_message_id'] = message.messageId;
+    }
+
     final int notificationId =
         (message.messageId?.hashCode ??
-                DateTime.now().millisecondsSinceEpoch.remainder(100000))
+                DateTime.now().microsecondsSinceEpoch.remainder(2147483647))
             .abs();
 
     await _localNotifications.show(
@@ -200,15 +281,42 @@ class NotificationService {
       title: title,
       body: body,
       notificationDetails: notificationDetails,
-      payload: jsonEncode(message.data),
+      payload: jsonEncode(payloadData),
     );
   }
 
-  void _handleRemoteMessage(RemoteMessage message) {
-    _handleNotificationData(message.data);
+  void _handleRunningLocalNotificationTap(NotificationResponse response) {
+    _dispatchPayload(
+      response.payload,
+      source: NotificationOpenSource.runningLocalNotification,
+    );
   }
 
-  void _handleLocalNotificationPayload(String? payload) {
+  void _dispatchRemoteMessage(
+    RemoteMessage message, {
+    required NotificationOpenSource source,
+  }) {
+    final NotificationIntent? intent = NotificationIntent.fromData(
+      message.data,
+      source: source,
+      messageId: message.messageId,
+    );
+
+    if (intent == null) {
+      debugPrint(
+        'Payload notifikasi diabaikan karena route tidak dikenali: '
+        '${message.data}',
+      );
+      return;
+    }
+
+    _navigationService.enqueue(intent);
+  }
+
+  void _dispatchPayload(
+    String? payload, {
+    required NotificationOpenSource source,
+  }) {
     if (payload == null || payload.trim().isEmpty) {
       return;
     }
@@ -216,38 +324,36 @@ class NotificationService {
     try {
       final dynamic decoded = jsonDecode(payload);
 
-      if (decoded is Map<String, dynamic>) {
-        _handleNotificationData(decoded);
+      if (decoded is! Map) {
         return;
       }
 
-      if (decoded is Map) {
-        final Map<String, dynamic> data = decoded.map<String, dynamic>(
-          (dynamic key, dynamic value) => MapEntry(key.toString(), value),
-        );
+      final Map<String, dynamic> data = decoded.map<String, dynamic>(
+        (dynamic key, dynamic value) => MapEntry(key.toString(), value),
+      );
 
-        _handleNotificationData(data);
+      final NotificationIntent? intent = NotificationIntent.fromData(
+        data,
+        source: source,
+        messageId: data['_message_id']?.toString(),
+      );
+
+      if (intent != null) {
+        _navigationService.enqueue(intent);
       }
-    } catch (_) {
-      if (payload == 'attendance') {
-        _navigationController.add(NotificationDestination.attendance);
-      }
-    }
-  }
-
-  void _handleNotificationData(Map<String, dynamic> data) {
-    final String route = data['route']?.toString().trim() ?? '';
-
-    if (route == 'attendance') {
-      _navigationController.add(NotificationDestination.attendance);
+    } catch (error, stackTrace) {
+      debugPrint('Payload local notification tidak valid: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> syncCurrentToken() async {
+    if (!_authenticatedSessionActive) {
+      return;
+    }
+
     try {
       final String? token = await _firebaseMessaging.getToken();
-
-      debugPrint('FCM token: $token');
 
       if (token == null || token.trim().isEmpty) {
         return;
@@ -255,14 +361,18 @@ class NotificationService {
 
       await _deviceTokenService.saveToken(token);
 
-      debugPrint('FCM token berhasil dikirim ke Laravel.');
+      // Jangan mencetak token lengkap ke log karena token adalah identifier
+      // sensitif yang dapat digunakan untuk menargetkan perangkat.
+      debugPrint('Token FCM berhasil disinkronkan ke Laravel.');
     } catch (error, stackTrace) {
-      debugPrint('Gagal menyinkronkan FCM token: $error');
+      debugPrint('Gagal menyinkronkan token FCM: $error');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> removeCurrentTokenFromBackend() async {
+    _authenticatedSessionActive = false;
+
     try {
       final String? token = await _firebaseMessaging.getToken();
 
@@ -271,14 +381,22 @@ class NotificationService {
       }
 
       await _deviceTokenService.deleteToken(token);
-    } catch (error) {
-      debugPrint('Gagal menghapus token FCM: $error');
+    } catch (error, stackTrace) {
+      debugPrint('Gagal menghapus token FCM dari backend: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
   Future<void> dispose() async {
+    await _foregroundMessageSubscription?.cancel();
+    await _messageOpenedAppSubscription?.cancel();
     await _tokenRefreshSubscription?.cancel();
+
+    _foregroundMessageSubscription = null;
+    _messageOpenedAppSubscription = null;
     _tokenRefreshSubscription = null;
-    _initialized = false;
+
+    _authenticatedSessionActive = false;
+    _initializationFuture = null;
   }
 }

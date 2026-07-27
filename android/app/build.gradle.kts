@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services")
     id("kotlin-android")
 
     // Flutter Gradle Plugin harus berada setelah
@@ -33,22 +34,19 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Mengantisipasi jumlah method yang bertambah
-        // setelah Firebase dan notification package ditambahkan.
         multiDexEnabled = true
     }
 
     buildTypes {
         release {
-            // Masih menggunakan debug signing.
-            // Nanti ganti dengan release signing ketika build production.
+            // Konfigurasi ini masih mengikuti repository saat ini.
+            // Ganti dengan release signing resmi ketika publish production.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
 
 dependencies {
-    // Wajib untuk core library desugaring.
     coreLibraryDesugaring(
         "com.android.tools:desugar_jdk_libs:2.1.4"
     )
