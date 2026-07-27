@@ -14,27 +14,31 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+
+  final TextEditingController _passwordController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
-    final authProvider = context.read<AuthProvider>();
+    final AuthProvider authProvider = context.read<AuthProvider>();
 
-    final success = await authProvider.login(
+    final bool success = await authProvider.login(
       _emailController.text.trim(),
       _passwordController.text,
     );
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
@@ -46,40 +50,48 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const MainScreen()),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            AppMessage.toIndonesia(
-              authProvider.errorMessage,
-              fallback:
-                  'Login gagal. Silakan periksa email dan kata sandi Anda.',
-            ),
-          ),
-          backgroundColor: Colors.red,
+      /*
+       * Tidak ada lagi pending notification navigation.
+       *
+       * Jika aplikasi sebelumnya terminated, proses sudah
+       * melewati SplashScreen normal dan login diperlakukan
+       * seperti membuka aplikasi biasa.
+       */
+      Navigator.of(context).pushReplacement<void, void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const MainScreen(),
+          settings: const RouteSettings(name: '/main'),
         ),
       );
+
+      return;
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppMessage.toIndonesia(
+            authProvider.errorMessage,
+            fallback: 'Login gagal. Silakan periksa email dan kata sandi Anda.',
+          ),
+        ),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Consume the AuthProvider state for reactive UI (like visibility toggles)
-    final authProvider = Provider.of<AuthProvider>(context);
+    final AuthProvider authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
       backgroundColor: AppColors.light[500],
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Custom App Logo
               Container(
                 width: 130,
                 height: 130,
@@ -87,14 +99,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Center(
                   child: Image.asset(
                     'assets/img/logo-no-bg.png',
-                    fit: BoxFit
-                        .contain, // Ensures the logo fits perfectly inside the circle
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
               const SizedBox(height: 10),
 
-              // Welcome Text with Waving Hand and Blue highlight
               Text.rich(
                 TextSpan(
                   text: 'Selamat datang kembali',
@@ -115,22 +125,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 10),
+
               const Text(
                 'Halo, silakan login untuk melanjutkan',
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
+
               const SizedBox(height: 30),
 
-              // Email Form Field
               _buildAuthTextField(
                 controller: _emailController,
                 label: 'Email',
                 icon: Icons.email_outlined,
               ),
+
               const SizedBox(height: 16),
 
-              // Password Form Field
               _buildAuthTextField(
                 controller: _passwordController,
                 label: 'Password',
@@ -146,9 +158,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: authProvider.togglePasswordVisibility,
                 ),
               ),
+
               const SizedBox(height: 12),
 
-              // Forgot Password Link
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -159,29 +171,26 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 30),
 
-              // Solid Blue Login Button (Reactive to loading state)
               SizedBox(
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  // Disable button while loading
                   onPressed: authProvider.isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primarySwatch[500],
-                    disabledBackgroundColor: AppColors
-                        .primarySwatch[200], // Lighter blue when disabled
+                    disabledBackgroundColor: AppColors.primarySwatch[200],
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  // Show loading spinner if API is processing
                   child: authProvider.isLoading
                       ? const SizedBox(
-                          height: 24,
                           width: 24,
+                          height: 24,
                           child: CircularProgressIndicator(
                             color: Colors.white,
                             strokeWidth: 2,
@@ -196,83 +205,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                 ),
               ),
+
               const SizedBox(height: 30),
-
-              // Social Account Divider
-              // Row(
-              //   children: [
-              //     Expanded(child: Divider(color: AppColors.gray20)),
-              //     const Padding(
-              //       padding: EdgeInsets.symmetric(horizontal: 16.0),
-              //       child: Text(
-              //         'Or continue with social account',
-              //         style: TextStyle(color: Colors.grey, fontSize: 12),
-              //       ),
-              //     ),
-              //     Expanded(child: Divider(color: AppColors.gray20)),
-              //   ],
-              // ),
-              // const SizedBox(height: 20),
-
-              // White Google Social Button
-              // SizedBox(
-              //   width: double.infinity,
-              //   height: 56,
-              //   child: OutlinedButton(
-              //     onPressed: () {},
-              //     style: OutlinedButton.styleFrom(
-              //       backgroundColor: Colors.white,
-              //       side: BorderSide(color: AppColors.gray20),
-              //       shape: RoundedRectangleBorder(
-              //         borderRadius: BorderRadius.circular(12),
-              //       ),
-              //     ),
-              //     child: Row(
-              //       mainAxisAlignment: MainAxisAlignment.center,
-              //       children: const [
-              //         Icon(Icons.android, color: Colors.green),
-              //         SizedBox(width: 12),
-              //         Text(
-              //           'Google',
-              //           style: TextStyle(
-              //             fontWeight: FontWeight.bold,
-              //             fontSize: 16,
-              //             color: Colors.black87,
-              //           ),
-              //         ),
-              //       ],
-              //     ),
-              //   ),
-              // ),
-              // const SizedBox(height: 30),
-
-              // Footer Register Link (Native Navigation)
-              // Center(
-              //   child: Text.rich(
-              //     TextSpan(
-              //       text: 'Belum punya akun? ',
-              //       style: const TextStyle(color: Colors.grey),
-              //       children: [
-              //         TextSpan(
-              //           text: 'Daftar sekarang',
-              //           style: TextStyle(
-              //             color: AppColors.primarySwatch[500],
-              //             fontWeight: FontWeight.bold,
-              //           ),
-              //           recognizer: TapGestureRecognizer()
-              //             ..onTap = () {
-              //               // Native Flutter Push Replacement
-              //               Navigator.pushReplacementNamed(
-              //                 context,
-              //                 '/register',
-              //               );
-              //             },
-              //         ),
-              //       ],
-              //     ),
-              //   ),
-              // ),
-              // const SizedBox(height: 30),
             ],
           ),
         ),
@@ -280,7 +214,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // Generic helper for creating auth text fields
   Widget _buildAuthTextField({
     required TextEditingController controller,
     required String label,
@@ -292,7 +225,9 @@ class _LoginScreenState extends State<LoginScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+
         const SizedBox(height: 6),
+
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(

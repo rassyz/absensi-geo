@@ -1,11 +1,15 @@
 // lib/screens/main_screen.dart
 
+import 'dart:async';
+
 import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/screens/attendance_report_screen.dart';
 import 'package:absensi_geo/screens/attendance_screen.dart';
 import 'package:absensi_geo/screens/home_screen.dart';
 import 'package:absensi_geo/screens/leave_request_screen.dart';
+import 'package:absensi_geo/screens/notification_splash_screen.dart';
 import 'package:absensi_geo/screens/profile_screen.dart';
+import 'package:absensi_geo/services/notification_service.dart';
 import 'package:absensi_geo/theme/app_colors.dart';
 import 'package:absensi_geo/widgets/custom_bottom_nav.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +24,12 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
+
   bool _isCheckingSession = false;
+  bool _isOpeningNotificationFlow = false;
+
+  StreamSubscription<NotificationDestination>?
+  _notificationNavigationSubscription;
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -33,12 +42,32 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+
     WidgetsBinding.instance.addObserver(this);
+
+    /*
+     * Hanya menangani klik notifikasi ketika aplikasi sudah hidup:
+     * foreground atau background.
+     *
+     * Kondisi terminated tidak masuk ke listener ini sebagai navigasi.
+     * Terminated selalu menjalankan SplashScreen normal.
+     */
+    _notificationNavigationSubscription = NotificationService
+        .instance
+        .navigationRequests
+        .listen((NotificationDestination destination) {
+          if (destination == NotificationDestination.attendance) {
+            unawaited(_openNotificationFlow());
+          }
+        });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+
+    unawaited(_notificationNavigationSubscription?.cancel());
+
     super.dispose();
   }
 
@@ -65,8 +94,33 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _openNotificationFlow() async {
+    if (!mounted || _isOpeningNotificationFlow) {
+      return;
+    }
+
+    final AuthProvider authProvider = context.read<AuthProvider>();
+
+    if (!authProvider.isAuthenticated) {
+      return;
+    }
+
+    _isOpeningNotificationFlow = true;
+
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => const NotificationSplashScreen(),
+          settings: const RouteSettings(name: '/notification-splash'),
+        ),
+      );
+    } finally {
+      _isOpeningNotificationFlow = false;
+    }
+  }
+
   void _onItemTapped(int index) {
-    final authProvider = context.read<AuthProvider>();
+    final AuthProvider authProvider = context.read<AuthProvider>();
 
     if (authProvider.isSessionExpired) {
       return;
@@ -85,16 +139,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.watch<AuthProvider>();
+    final AuthProvider authProvider = context.watch<AuthProvider>();
     final bool isSessionExpired = authProvider.isSessionExpired;
 
-    /*
-     * Ketika sesi kedaluwarsa:
-     * - Home tetap terlihat.
-     * - Halaman lain tidak dapat dibuka.
-     * - Bottom navigation dan FAB disembunyikan.
-     * - Tombol Back diblokir.
-     */
     final int visibleIndex = isSessionExpired ? 0 : _selectedIndex;
 
     return PopScope(
@@ -113,10 +160,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ? null
             : FloatingActionButton(
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AttendanceScreen(),
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AttendanceScreen(),
                     ),
                   );
                 },

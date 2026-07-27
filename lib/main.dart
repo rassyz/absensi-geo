@@ -1,30 +1,54 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
-import 'package:intl/date_symbol_data_local.dart';
+import 'firebase_options.dart';
 
-// --- Providers ---
-import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/providers/attendance_update_provider.dart';
-import 'package:absensi_geo/providers/overtime_provider.dart';
-import 'package:absensi_geo/providers/leave_provider.dart';
+import 'package:absensi_geo/providers/auth_provider.dart';
 import 'package:absensi_geo/providers/employee_provider.dart';
+import 'package:absensi_geo/providers/leave_provider.dart';
+import 'package:absensi_geo/providers/overtime_provider.dart';
 
-// --- Screens ---
-import 'package:absensi_geo/screens/splash_screen.dart';
-import 'package:absensi_geo/screens/login_screen.dart';
-import 'package:absensi_geo/screens/register_screen.dart';
 import 'package:absensi_geo/screens/home_screen.dart';
+import 'package:absensi_geo/screens/login_screen.dart';
 import 'package:absensi_geo/screens/main_screen.dart';
+import 'package:absensi_geo/screens/register_screen.dart';
+import 'package:absensi_geo/screens/splash_screen.dart';
 
-// --- Services ---
 import 'package:absensi_geo/services/auth_service.dart';
+import 'package:absensi_geo/services/notification_service.dart';
 
-void main() async {
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+}
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await initializeDateFormatting('id_ID', null);
 
-  final authService = AuthService();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  await NotificationService.instance.initialize();
+
+  /*
+   * Penting:
+   * Jangan memanggil FirebaseMessaging.getInitialMessage() di sini.
+   *
+   * Ketika aplikasi terminated lalu notifikasi ditekan, aplikasi
+   * dibiarkan memulai alur normal:
+   * SplashScreen -> restore session -> MainScreen.
+   *
+   * Ini mencegah navigasi bersamaan saat MaterialApp dan Navigator
+   * root masih dibangun.
+   */
+  final AuthService authService = AuthService();
 
   runApp(
     MultiProvider(
@@ -48,14 +72,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Attendify',
       debugShowCheckedModeBanner: false,
-
       initialRoute: '/splash',
       routes: {
-        '/splash': (context) => const SplashScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/home': (context) => const HomeScreen(),
-        '/main': (context) => const MainScreen(),
+        '/splash': (_) => const SplashScreen(),
+        '/login': (_) => const LoginScreen(),
+        '/register': (_) => const RegisterScreen(),
+        '/home': (_) => const HomeScreen(),
+        '/main': (_) => const MainScreen(),
       },
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/api_exception.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService authService;
@@ -118,6 +119,9 @@ class AuthProvider extends ChangeNotifier {
         _user = result;
         _resetExpiredSessionState();
         _errorMessage = '';
+
+        await NotificationService.instance.syncCurrentToken();
+
         return true;
       }
 
@@ -165,6 +169,10 @@ class AuthProvider extends ChangeNotifier {
       final token = await authService.getToken();
 
       if (token != null && token.isNotEmpty) {
+        // Hapus hubungan token FCM dengan pengguna sebelum
+        // Bearer token Laravel dihapus.
+        await NotificationService.instance.removeCurrentTokenFromBackend();
+
         await authService.logout(token);
       } else {
         await authService.clearToken();
@@ -244,6 +252,9 @@ class AuthProvider extends ChangeNotifier {
         _user = result;
         _resetExpiredSessionState();
         _errorMessage = '';
+
+        await NotificationService.instance.syncCurrentToken();
+
         return true;
       }
 

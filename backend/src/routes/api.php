@@ -6,7 +6,9 @@ use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\LeaveController;
 use App\Http\Controllers\Api\LeaveTypeController;
 use App\Http\Controllers\Api\OvertimeController;
+use App\Http\Controllers\Api\DeviceTokenController;
 use Illuminate\Support\Facades\Route;
+
 
 Route::post('/register', [AuthController::class, 'register'])->name('api.register');
 Route::post('/login', [AuthController::class, 'login'])->name('api.login');
@@ -38,4 +40,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/overtimes/clock-out', [OvertimeController::class, 'clockOut'])->name('api.overtimes.clockout');
     Route::get('/team-members', [EmployeeController::class, 'getTeamMembers'])->name('api.team-members.index');
     Route::get('/team-members/{id}/attendances', [AttendanceController::class, 'getMemberAttendances'])->name('api.team-members.attendances');
+
+    // Device Token API
+    Route::post('/device-tokens', [DeviceTokenController::class, 'store'])->name('api.device-tokens.store');
+    Route::delete('/device-tokens', [DeviceTokenController::class, 'destroy'])->name('api.device-tokens.destroy');
 });

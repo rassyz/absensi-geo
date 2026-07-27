@@ -13,6 +13,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _navigationHandled = false;
+
   @override
   void initState() {
     super.initState();
@@ -20,32 +22,27 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkSession() async {
-    await Future.delayed(const Duration(seconds: 2));
+    await Future<void>.delayed(const Duration(seconds: 2));
 
-    if (!mounted) return;
-
-    final authProvider = context.read<AuthProvider>();
-    final bool isLoggedIn = await authProvider.restoreSession();
-
-    if (!mounted) return;
-
-    /*
-     * Token valid:
-     *   Masuk ke MainScreen.
-     *
-     * Token kedaluwarsa:
-     *   Tetap masuk ke MainScreen agar Home terlihat dan dialog sesi
-     *   kedaluwarsa dapat ditampilkan.
-     *
-     * Belum pernah login:
-     *   Langsung ke halaman Login.
-     */
-    if (isLoggedIn || authProvider.isSessionExpired) {
-      Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+    if (!mounted || _navigationHandled) {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    final AuthProvider authProvider = context.read<AuthProvider>();
+    final bool isLoggedIn = await authProvider.restoreSession();
+
+    if (!mounted || _navigationHandled) {
+      return;
+    }
+
+    _navigationHandled = true;
+
+    if (isLoggedIn || authProvider.isSessionExpired) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/main', (route) => false);
+      return;
+    }
+
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   @override

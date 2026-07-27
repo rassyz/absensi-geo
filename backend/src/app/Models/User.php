@@ -13,6 +13,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class User extends Authenticatable implements FilamentUser, HasAvatar
 {
@@ -92,5 +93,11 @@ final class User extends Authenticatable implements FilamentUser, HasAvatar
     public function approvedLeaves()
     {
         return $this->hasMany(Leave::class, 'approved_by');
+    }
+
+    // Relasi One-to-Many ke DeviceToken
+    public function deviceTokens(): HasMany
+    {
+        return $this->hasMany(DeviceToken::class);
     }
 }
