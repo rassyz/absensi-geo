@@ -24,6 +24,13 @@ Route::middleware('auth:sanctum')->get('/user', [AuthController::class, 'me']);
 // API Absensi
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/attendance/validate-location', [AttendanceController::class, 'validateLocationStatus'])->name('api.attendance.validate-location');
+
+    // Endpoint sementara untuk pengujian skripsi.
+    Route::post(
+        '/attendance/geofence-test',
+        [AttendanceController::class, 'geofenceTest']
+    )->name('api.attendance.geofence-test');
+
     Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn'])->name('api.attendance.checkin');
     Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut'])->name('api.attendance.checkout');
     Route::get('/attendance/user-zone', [AttendanceController::class, 'getUserZone'])->name('api.attendance.userzone');

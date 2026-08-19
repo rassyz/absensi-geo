@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
-// use App\Models\AttendanceZone;
 use App\Models\Employee;
 use App\Models\User;
+use App\Models\WorkAssignment;
 use App\Services\EmployeeAttendanceZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -26,6 +26,39 @@ class AttendanceController extends Controller
         try {
             $user = $request->user();
 
+            /*
+            * Prioritas pertama:
+            * cek apakah pengguna memiliki Surat Tugas aktif.
+            */
+            $workAssignment = $this->getActiveWorkAssignment($user);
+
+            if ($workAssignment) {
+                return response()->json([
+                    'success' => true,
+
+                    'attendance_mode' => 'outside_duty',
+
+                    'zone_source' => null,
+
+                    /*
+                    * Tugas luar tidak menggunakan Geofencing Polygon.
+                    */
+                    'zones' => [],
+
+                    'work_assignment' => [
+                        'id' => (int) $workAssignment->id,
+                        'assignment_number' => $workAssignment->assignment_number,
+                        'destination' => $workAssignment->destination,
+                        'purpose' => $workAssignment->purpose,
+                        'start_date' => $workAssignment->start_date?->toDateString(),
+                        'end_date' => $workAssignment->end_date?->toDateString(),
+                    ],
+                ]);
+            }
+
+            /*
+            * Tidak ada Surat Tugas: jalankan mekanisme zona lama.
+            */
             $validZoneIds = $this->getUserAttendanceZoneIds(
                 $user
             );
@@ -50,26 +83,35 @@ class AttendanceController extends Controller
 
             $user->loadMissing('employee');
 
-            $zoneSource = $user->employee?->attendance_zone_id !== null
+            $zoneSource =
+                $user->employee?->attendance_zone_id !== null
                 ? 'employee'
                 : 'department';
 
             return response()->json([
                 'success' => true,
+
+                'attendance_mode' => 'regular',
+
                 'zone_source' => $zoneSource,
+
                 'zones' => $zones,
+
+                'work_assignment' => null,
             ]);
         } catch (\RuntimeException $exception) {
+
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
             ], 404);
         } catch (\Throwable $exception) {
+
             report($exception);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mengambil zona presensi.',
+                'message' => 'Gagal mengambil konfigurasi presensi.',
             ], 500);
         }
     }
@@ -155,7 +197,7 @@ class AttendanceController extends Controller
                 ]);
             }
 
-            $result = $this->getLocationValidationResult(
+            $result = $this->getAttendanceLocationValidationResult(
                 $request->user(),
                 (float) $request->latitude,
                 (float) $request->longitude
@@ -168,6 +210,8 @@ class AttendanceController extends Controller
                 'message' => $result['message'],
                 'zone_id' => $result['zone_id'],
                 'zone_name' => $result['zone_name'],
+                'work_assignment_id' => $result['work_assignment_id'],
+                'work_assignment' => $result['work_assignment'],
                 'is_attendance_blocked' => false,
                 'attendance_status' => null,
             ]);
@@ -216,11 +260,12 @@ class AttendanceController extends Controller
             }
 
             // Validasi final tetap dilakukan backend ketika data presensi dikirim.
-            $locationResult = $this->getLocationValidationResult(
-                $request->user(),
-                (float) $request->latitude,
-                (float) $request->longitude
-            );
+            $locationResult =
+                $this->getAttendanceLocationValidationResult(
+                    $request->user(),
+                    (float) $request->latitude,
+                    (float) $request->longitude
+                );
 
             if (!$locationResult['is_valid']) {
                 return response()->json([
@@ -244,6 +289,8 @@ class AttendanceController extends Controller
             $attendance = Attendance::create([
                 'employee_id' => $request->user()->employee->id,
                 'attendance_zone_id' => $locationResult['zone_id'],
+                'work_assignment_id' =>
+                $locationResult['work_assignment_id'],
                 'date' => $today,
                 'check_in' => $checkInTime,
                 'check_in_latitude' => $request->latitude,
@@ -255,8 +302,14 @@ class AttendanceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Presensi masuk berhasil.',
-                'location_status' => $locationResult['location_status'],
+                'message' => $locationResult['location_status']
+                    === 'outside_duty'
+                    ? 'Presensi tugas luar berhasil.'
+                    : 'Presensi masuk berhasil.',
+                'location_status' =>
+                $locationResult['location_status'],
+                'work_assignment' =>
+                $locationResult['work_assignment'],
                 'data' => $attendance,
             ]);
         } catch (\Exception $e) {
@@ -297,11 +350,12 @@ class AttendanceController extends Controller
             }
 
             // Validasi final tetap dilakukan backend ketika data presensi dikirim.
-            $locationResult = $this->getLocationValidationResult(
-                $request->user(),
-                (float) $request->latitude,
-                (float) $request->longitude
-            );
+            $locationResult =
+                $this->getAttendanceLocationValidationResult(
+                    $request->user(),
+                    (float) $request->latitude,
+                    (float) $request->longitude
+                );
 
             if (!$locationResult['is_valid']) {
                 return response()->json([
@@ -333,8 +387,15 @@ class AttendanceController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Presensi keluar berhasil. Hati-hati di jalan!',
-                'location_status' => $locationResult['location_status'],
+                'message' => $locationResult['location_status']
+                    === 'outside_duty'
+                    ? 'Presensi keluar tugas luar berhasil.'
+                    : 'Presensi keluar berhasil. Hati-hati di jalan!',
+                'location_status' =>
+                $locationResult['location_status'],
+                'work_assignment' =>
+                $locationResult['work_assignment'],
+
                 'data' => $attendance,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -348,6 +409,268 @@ class AttendanceController extends Controller
                 'message' => 'Terjadi kesalahan sistem: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Endpoint sementara untuk pengujian kuantitatif geofencing.
+     *
+     * Hapus method ini setelah seluruh data penelitian selesai dikumpulkan.
+     */
+    public function geofenceTest(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'latitude' => 'required|numeric|between:-90,90',
+            'longitude' => 'required|numeric|between:-180,180',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        try {
+            $latitude = (float) $request->latitude;
+            $longitude = (float) $request->longitude;
+
+            $validZoneIds = $this->getUserAttendanceZoneIds(
+                $request->user()
+            );
+
+            $zonePlaceholders = implode(
+                ', ',
+                array_fill(0, count($validZoneIds), '?')
+            );
+
+            /*
+         * Query mengambil zona terdekat, baik titik berada:
+         * 1. di dalam polygon;
+         * 2. pada zona toleransi;
+         * 3. lebih dari 10 meter di luar polygon.
+         */
+            $sql = <<<SQL
+            WITH point AS (
+                SELECT ST_SetSRID(
+                    ST_MakePoint(?, ?),
+                    4326
+                ) AS geom
+            ),
+            nearest_zone AS (
+                SELECT
+                    attendance_zones.id,
+                    attendance_zones.name,
+
+                    ST_Covers(
+                        attendance_zones.area,
+                        point.geom
+                    ) AS is_inside,
+
+                    ST_Distance(
+                        attendance_zones.area::geography,
+                        point.geom::geography
+                    ) AS distance_meters
+
+                FROM attendance_zones
+                CROSS JOIN point
+
+                WHERE attendance_zones.id IN ({$zonePlaceholders})
+
+                ORDER BY
+                    distance_meters ASC,
+                    attendance_zones.id ASC
+
+                LIMIT 1
+            )
+
+            SELECT
+                id,
+                name,
+                is_inside,
+                distance_meters,
+
+                CASE
+                    WHEN is_inside
+                        THEN 'inside_area'
+
+                    WHEN distance_meters <= ?
+                        THEN 'tolerance_zone'
+
+                    ELSE 'outside_area'
+                END AS location_status
+
+            FROM nearest_zone
+        SQL;
+
+            $bindings = [
+                $longitude,
+                $latitude,
+                ...$validZoneIds,
+                self::TOLERANCE_METERS,
+            ];
+
+            $zone = DB::selectOne($sql, $bindings);
+
+            if (!$zone) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Zona presensi tidak ditemukan.',
+                ], 404);
+            }
+
+            $locationStatus = $zone->location_status;
+
+            $isValid = in_array(
+                $locationStatus,
+                ['inside_area', 'tolerance_zone'],
+                true
+            );
+
+            $message = match ($locationStatus) {
+                'inside_area' =>
+                'Lokasi berada di dalam polygon.',
+
+                'tolerance_zone' =>
+                'Lokasi berada di zona toleransi.',
+
+                default =>
+                'Lokasi berada di luar zona toleransi.',
+            };
+
+            return response()->json([
+                'success' => true,
+
+                // Koordinat aktual dari perangkat
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+
+                // Zona terdekat
+                'zone_id' => (int) $zone->id,
+                'zone_name' => $zone->name,
+
+                // Data kuantitatif pengujian
+                'distance_to_polygon_meters' => round(
+                    (float) $zone->distance_meters,
+                    2
+                ),
+
+                'tolerance_meters' => self::TOLERANCE_METERS,
+
+                // Hasil validasi
+                'is_valid' => $isValid,
+                'location_status' => $locationStatus,
+                'message' => $message,
+            ]);
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 404);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal melakukan pengujian geofencing.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Mengambil Surat Tugas Luar yang aktif untuk karyawan
+     * berdasarkan tanggal hari ini.
+     */
+    private function getActiveWorkAssignment(User $user): ?WorkAssignment
+    {
+        $user->loadMissing('employee');
+
+        $employee = $user->employee;
+
+        if (!$employee) {
+            throw new \RuntimeException(
+                'Profil karyawan tidak ditemukan.'
+            );
+        }
+
+        $today = Carbon::today()->toDateString();
+
+        return WorkAssignment::query()
+            ->whereHas(
+                'employees',
+                function ($query) use ($employee) {
+                    $query->where(
+                        'employees.id',
+                        $employee->id
+                    );
+                }
+            )
+            ->where('is_active', true)
+            ->whereDate(
+                'start_date',
+                '<=',
+                $today
+            )
+            ->whereDate(
+                'end_date',
+                '>=',
+                $today
+            )
+            ->orderByDesc('start_date')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Menentukan mekanisme validasi presensi.
+     *
+     * - Jika terdapat Surat Tugas aktif:
+     *   Geofencing Polygon dilewati dan GPS aktual tetap dicatat.
+     *
+     * - Jika tidak terdapat Surat Tugas aktif:
+     *   validasi Geofencing Polygon + zona toleransi tetap digunakan.
+     */
+    private function getAttendanceLocationValidationResult(
+        User $user,
+        float $latitude,
+        float $longitude
+    ): array {
+        $workAssignment = $this->getActiveWorkAssignment($user);
+
+        if ($workAssignment) {
+            return [
+                'is_valid' => true,
+                'location_status' => 'outside_duty',
+                'message' => 'Surat tugas luar aktif. Lokasi GPS aktual akan dicatat sebagai bukti presensi.',
+                'zone_id' => null,
+                'zone_name' => null,
+
+                'work_assignment_id' => (int) $workAssignment->id,
+
+                'work_assignment' => [
+                    'id' => (int) $workAssignment->id,
+                    'assignment_number' => $workAssignment->assignment_number,
+                    'destination' => $workAssignment->destination,
+                    'purpose' => $workAssignment->purpose,
+                    'start_date' => $workAssignment->start_date?->toDateString(),
+                    'end_date' => $workAssignment->end_date?->toDateString(),
+                ],
+            ];
+        }
+
+        /*
+        * Tidak ada Surat Tugas.
+        * Jalankan validasi Geofencing Polygon lama tanpa perubahan.
+        */
+        $locationResult = $this->getLocationValidationResult(
+            $user,
+            $latitude,
+            $longitude
+        );
+
+        $locationResult['work_assignment_id'] = null;
+        $locationResult['work_assignment'] = null;
+
+        return $locationResult;
     }
 
     /**
