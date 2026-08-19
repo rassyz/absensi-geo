@@ -84,6 +84,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   // --- Dynamic Map State Variables ---
   List<_AttendanceZoneMapData> _attendanceZones = [];
+  // --- Attendance Context ---
+  bool _isOutsideDuty = false;
+  Map<String, dynamic>? _activeWorkAssignment;
   LatLng? _officeLocation;
   LatLng? _userLocation;
   bool _isLoadingMap = true;
@@ -108,6 +111,42 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   String _locationStatusCode = 'loading';
   String _locationStatusMessage = 'Mencari lokasi terkini...';
+
+  // ============================================================
+  // PENGUJIAN GEOFENCING SEMENTARA
+  //
+  // Panel hanya muncul apabila aplikasi dijalankan menggunakan:
+  // --dart-define=GEOFENCE_TEST=true
+  // ============================================================
+  static const bool _geofenceTestEnabled = bool.fromEnvironment(
+    'GEOFENCE_TEST',
+    defaultValue: false,
+  );
+
+  bool _isTakingGeofenceSample = false;
+
+  Map<String, dynamic>? _geofenceTestResult;
+
+  double? _geofenceTestGpsAccuracy;
+
+  int? _geofenceLastResponseMilliseconds;
+
+  final List<int> _geofenceResponseSamples = <int>[];
+
+  int get _geofenceSampleCount => _geofenceResponseSamples.length;
+
+  double? get _geofenceAverageResponseMilliseconds {
+    if (_geofenceResponseSamples.isEmpty) {
+      return null;
+    }
+
+    final int total = _geofenceResponseSamples.fold(
+      0,
+      (sum, value) => sum + value,
+    );
+
+    return total / _geofenceResponseSamples.length;
+  }
 
   @override
   void initState() {
@@ -210,17 +249,45 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _fetchAttendanceZone() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
     final token = authProvider.user?.token;
 
     if (token == null || token.isEmpty) {
       return;
     }
 
-    final zonesData = await _attendanceService.getUserAttendanceZones(token);
+    final attendanceContext = await _attendanceService.getUserAttendanceContext(
+      token,
+    );
+
+    final String attendanceMode =
+        attendanceContext['attendance_mode']?.toString() ?? 'regular';
+
+    final bool isOutsideDuty = attendanceMode == 'outside_duty';
+
+    Map<String, dynamic>? workAssignment;
+
+    final dynamic rawWorkAssignment = attendanceContext['work_assignment'];
+
+    if (rawWorkAssignment is Map<String, dynamic>) {
+      workAssignment = rawWorkAssignment;
+    } else if (rawWorkAssignment is Map) {
+      workAssignment = Map<String, dynamic>.from(rawWorkAssignment);
+    }
+
+    final dynamic rawZones = attendanceContext['zones'];
+
+    final List<Map<String, dynamic>> zonesData = rawZones is List
+        ? rawZones
+              .whereType<Map>()
+              .map((zone) => Map<String, dynamic>.from(zone))
+              .toList(growable: false)
+        : <Map<String, dynamic>>[];
 
     final parsedZones = zonesData
         .map<_AttendanceZoneMapData?>((zone) {
           final String area = zone['area']?.toString() ?? '';
+
           final List<LatLng> points = _parseWktPolygon(area);
 
           if (points.isEmpty) {
@@ -243,10 +310,32 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         .toList(growable: false);
 
     setState(() {
+      _isOutsideDuty = isOutsideDuty;
+
+      _activeWorkAssignment = workAssignment;
+
       _attendanceZones = parsedZones;
 
       if (allPoints.isNotEmpty) {
         _officeLocation = _getPointsCenter(allPoints);
+      }
+
+      /*
+     * Jangan menetapkan lokasi valid di sini.
+     *
+     * Walaupun terdapat Surat Tugas,
+     * backend validate-location tetap menjadi
+     * sumber validasi final.
+     */
+      if (_isOutsideDuty) {
+        _locationStatusCode = 'loading';
+
+        _locationStatusMessage =
+            'Memvalidasi Surat Tugas dan lokasi GPS aktual...';
+
+        _isLocationValid = false;
+
+        _isValidatingLocation = true;
       }
     });
   }
@@ -304,10 +393,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    // Jika polygon gagal dimuat, aplikasi tetap dapat memakai validasi
-    // backend. Request tetap dibatasi oleh throttle lima detik.
+    /*
+    * Presensi Tugas Luar:
+    *
+    * Geofencing Polygon tidak digunakan.
+    * Namun validasi tetap dikirim ke backend agar
+    * keberadaan dan masa berlaku Surat Tugas
+    * selalu diverifikasi server.
+    */
+    if (_isOutsideDuty) {
+      _lastLocalLocationStatus = 'outside_duty';
+
+      _scheduleLocationValidation(position);
+
+      return;
+    }
+
+    // Jika polygon gagal dimuat, aplikasi tetap dapat memakai
+    // validasi backend. Request tetap dibatasi oleh throttle.
     if (_attendanceZones.isEmpty) {
       _scheduleLocationValidation(position);
+
       return;
     }
 
@@ -483,14 +589,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   Map<String, dynamic> _getLocalLocationValidationResult(Position position) {
-    if (_attendanceZones.isEmpty) {
+    if (_isOutsideDuty) {
       return {
         'success': true,
-        'is_valid': false,
-        'location_status': 'location_error',
-        'message': 'Zona presensi belum tersedia.',
+        'is_valid': true,
+        'location_status': 'outside_duty',
+        'message': 'Surat tugas luar aktif. Lokasi GPS aktual akan dicatat.',
         'zone_id': null,
         'zone_name': null,
+        'work_assignment': _activeWorkAssignment,
         'is_attendance_blocked': false,
       };
     }
@@ -685,6 +792,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final String status =
         result['location_status']?.toString() ?? 'outside_area';
     final bool isValid = result['is_valid'] == true;
+    Map<String, dynamic>? serverWorkAssignment;
+
+    final dynamic rawWorkAssignment = result['work_assignment'];
+
+    if (rawWorkAssignment is Map<String, dynamic>) {
+      serverWorkAssignment = rawWorkAssignment;
+    } else if (rawWorkAssignment is Map) {
+      serverWorkAssignment = Map<String, dynamic>.from(rawWorkAssignment);
+    }
+
+    final bool hasWorkAssignmentField = result.containsKey('work_assignment');
     final String message =
         result['message']?.toString() ??
         (isValid
@@ -708,6 +826,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         _locationStatusCode = 'attendance_blocked';
         _locationStatusMessage = message;
         return;
+      }
+
+      if (hasWorkAssignmentField) {
+        _activeWorkAssignment = serverWorkAssignment;
+
+        _isOutsideDuty =
+            status == 'outside_duty' && serverWorkAssignment != null;
       }
 
       _isLocationValid = isValid;
@@ -867,18 +992,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       // Cek lokal mencegah upload foto apabila pengguna sudah berpindah ke
       // luar zona selama proses mengambil foto. Jika polygon tidak tersedia,
       // request langsung diteruskan agar backend tetap menjadi sumber final.
-      if (_attendanceZones.isNotEmpty) {
+      if (!_isOutsideDuty && _attendanceZones.isNotEmpty) {
         final latestLocalValidation = _getLocalLocationValidationResult(
           latestPosition,
         );
 
         _lastLocalLocationStatus = latestLocalValidation['location_status']
             ?.toString();
+
         _applyLocationValidationResult(latestLocalValidation);
 
         if (latestLocalValidation['is_valid'] != true) {
           if (loadingDialogVisible) {
             Navigator.of(context, rootNavigator: true).pop();
+
             loadingDialogVisible = false;
           }
 
@@ -891,12 +1018,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               backgroundColor: AppColors.tertiary[500],
             ),
           );
+
           return;
         }
       }
 
-      // Backend tetap menjadi sumber validasi final. Laravel akan menjalankan
-      // pengecekan PostGIS sebelum menyimpan check-in/check-out.
+      // Backend tetap menjadi sumber validasi final.
+      // Untuk presensi reguler Laravel menjalankan validasi PostGIS.
+      // Untuk tugas luar Laravel memverifikasi Surat Tugas aktif
+      // sebelum menyimpan check-in/check-out.
       final result = await _attendanceService.submitAttendance(
         token: token,
         photo: _capturedImage!,
@@ -1056,6 +1186,90 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  Future<void> _takeGeofenceTestSample(String token) async {
+    if (_isTakingGeofenceSample) {
+      return;
+    }
+
+    if (token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sesi login tidak ditemukan.')),
+      );
+
+      return;
+    }
+
+    setState(() {
+      _isTakingGeofenceSample = true;
+    });
+
+    try {
+      /*
+     * Pengambilan GPS tidak dimasukkan ke waktu respons API.
+     * Stopwatch dimulai setelah posisi GPS diperoleh.
+     */
+      final Position position = await _getFreshPosition();
+
+      final Stopwatch stopwatch = Stopwatch()..start();
+
+      final Map<String, dynamic> result = await _attendanceService
+          .getGeofenceTestData(
+            token: token,
+            latitude: position.latitude,
+            longitude: position.longitude,
+          );
+
+      stopwatch.stop();
+
+      if (!mounted) {
+        return;
+      }
+
+      final int responseMilliseconds = stopwatch.elapsedMilliseconds;
+
+      setState(() {
+        _latestPosition = position;
+
+        _userLocation = LatLng(position.latitude, position.longitude);
+
+        _geofenceTestResult = result;
+
+        // Estimasi akurasi horizontal dari perangkat.
+        _geofenceTestGpsAccuracy = position.accuracy;
+
+        _geofenceLastResponseMilliseconds = responseMilliseconds;
+
+        _geofenceResponseSamples.add(responseMilliseconds);
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppMessage.toIndonesia(error)),
+          backgroundColor: AppColors.tertiary[500],
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTakingGeofenceSample = false;
+        });
+      }
+    }
+  }
+
+  void _resetGeofenceTestSamples() {
+    setState(() {
+      _geofenceTestResult = null;
+      _geofenceTestGpsAccuracy = null;
+      _geofenceLastResponseMilliseconds = null;
+      _geofenceResponseSamples.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -1142,7 +1356,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       body: Stack(
         children: [
           _buildMap(),
+
           Positioned(top: 16, left: 16, right: 16, child: _buildDateSelector()),
+
+          if (_geofenceTestEnabled)
+            Positioned(
+              top: 82,
+              left: 16,
+              right: 16,
+              child: _buildGeofenceTestPanel(user?.token ?? ''),
+            ),
+
           Positioned(
             left: 0,
             right: 0,
@@ -1455,6 +1679,181 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGeofenceTestPanel(String token) {
+    final Map<String, dynamic>? result = _geofenceTestResult;
+
+    final dynamic rawDistance = result?['distance_to_polygon_meters'];
+
+    double? distance;
+
+    if (rawDistance is num) {
+      distance = rawDistance.toDouble();
+    } else {
+      distance = double.tryParse(rawDistance?.toString() ?? '');
+    }
+
+    final dynamic rawLatitude = result?['latitude'];
+
+    final dynamic rawLongitude = result?['longitude'];
+
+    final String coordinateText = rawLatitude != null && rawLongitude != null
+        ? '${rawLatitude.toString()}, '
+              '${rawLongitude.toString()}'
+        : '--';
+
+    final String distanceText = distance != null
+        ? '${distance.toStringAsFixed(2)} m'
+        : '--';
+
+    final String accuracyText = _geofenceTestGpsAccuracy != null
+        ? '± ${_geofenceTestGpsAccuracy!.toStringAsFixed(2)} m'
+        : '--';
+
+    final String lastResponseText = _geofenceLastResponseMilliseconds != null
+        ? '${(_geofenceLastResponseMilliseconds! / 1000).toStringAsFixed(3)} detik'
+        : '--';
+
+    final double? averageMilliseconds = _geofenceAverageResponseMilliseconds;
+
+    final String averageResponseText = averageMilliseconds != null
+        ? '${(averageMilliseconds / 1000).toStringAsFixed(3)} detik'
+        : '--';
+
+    final String locationStatus =
+        result?['location_status']?.toString() ?? '--';
+
+    String actualResult = '--';
+
+    switch (locationStatus) {
+      case 'inside_area':
+        actualResult = 'Diterima - di dalam polygon';
+        break;
+
+      case 'tolerance_zone':
+        actualResult = 'Diterima - zona toleransi';
+        break;
+
+      case 'outside_area':
+        actualResult = 'Ditolak - di luar toleransi';
+        break;
+    }
+
+    return Card(
+      elevation: 4,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.science_outlined, size: 19),
+                SizedBox(width: 8),
+                Text(
+                  'Pengujian Geofencing',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            _buildGeofenceTestRow(
+              label: 'Koordinat aktual',
+              value: coordinateText,
+            ),
+
+            _buildGeofenceTestRow(label: 'Jarak poligon', value: distanceText),
+
+            _buildGeofenceTestRow(label: 'Akurasi GPS', value: accuracyText),
+
+            _buildGeofenceTestRow(
+              label: 'Zona',
+              value: result?['zone_name']?.toString() ?? '--',
+            ),
+
+            _buildGeofenceTestRow(label: 'Hasil aktual', value: actualResult),
+
+            _buildGeofenceTestRow(
+              label: 'Respons terakhir',
+              value: lastResponseText,
+            ),
+
+            _buildGeofenceTestRow(
+              label: 'Jumlah pengulangan',
+              value: '$_geofenceSampleCount kali',
+            ),
+
+            _buildGeofenceTestRow(
+              label: 'Rata-rata respons',
+              value: averageResponseText,
+            ),
+
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isTakingGeofenceSample
+                        ? null
+                        : () => _takeGeofenceTestSample(token),
+                    icon: _isTakingGeofenceSample
+                        ? const SizedBox(
+                            width: 17,
+                            height: 17,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_location_alt_outlined),
+                    label: Text(
+                      _isTakingGeofenceSample ? 'Mengambil...' : 'Ambil Sampel',
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                OutlinedButton(
+                  onPressed: _resetGeofenceTestSamples,
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGeofenceTestRow({required String label, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 125,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+            ),
+          ),
+
+          const Text(': ', style: TextStyle(fontSize: 11)),
+
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
             ),
           ),
         ],

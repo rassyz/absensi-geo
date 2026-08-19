@@ -6,6 +6,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 
 class AttendanceForm
@@ -22,7 +23,7 @@ class AttendanceForm
                 Select::make('attendance_zone_id')
                     ->label('Zona Presensi')
                     ->relationship('attendanceZone', 'name')
-                    ->required(),
+                    ->nullable(),
                 DatePicker::make('date')
                     ->label('Tanggal')
                     ->required()
@@ -73,7 +74,14 @@ class AttendanceForm
                     ->disk('public')
                     ->directory('attendances')
                     ->openable(),
-                // ->disabled(),
+                View::make(
+                    'filament.admin.attendances.location-maps'
+                )
+                    ->visible(
+                        fn(string $operation): bool =>
+                        $operation === 'view'
+                    )
+                    ->columnSpanFull(),
             ]);
     }
 }

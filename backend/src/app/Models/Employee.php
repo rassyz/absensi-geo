@@ -71,4 +71,12 @@ class Employee extends Model
     {
         return $this->hasMany(OvertimeEmployee::class);
     }
+
+    public function workAssignments()
+    {
+        return $this->belongsToMany(
+            WorkAssignment::class,
+            'work_assignment_employees'
+        )->withTimestamps();
+    }
 }

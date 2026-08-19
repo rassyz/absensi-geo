@@ -6,17 +6,36 @@ import 'api_exception.dart';
 import 'base_api_service.dart';
 
 class AttendanceService extends BaseApiService {
-  /// Mengambil seluruh zona presensi polygon berdasarkan departemen user login.
-  Future<List<Map<String, dynamic>>> getUserAttendanceZones(
-    String token,
-  ) async {
+  /// Mengambil konteks presensi pengguna.
+  ///
+  /// Response dapat berupa:
+  /// - attendance_mode = regular
+  /// - attendance_mode = outside_duty
+  ///
+  /// Untuk outside_duty, backend juga mengirim data Surat Tugas aktif.
+  Future<Map<String, dynamic>> getUserAttendanceContext(String token) async {
     final data = await getJson('/attendance/user-zone', token: token);
 
     final responseData = _asMap(data);
 
     if (responseData['success'] != true) {
-      return <Map<String, dynamic>>[];
+      throw ApiException(
+        responseData['message']?.toString() ??
+            'Konfigurasi presensi tidak dapat dimuat.',
+      );
     }
+
+    return responseData;
+  }
+
+  /// Mengambil seluruh zona presensi polygon pengguna.
+  ///
+  /// Method ini dipertahankan untuk kompatibilitas dengan kode lama.
+  /// Untuk mengetahui mode presensi, gunakan getUserAttendanceContext().
+  Future<List<Map<String, dynamic>>> getUserAttendanceZones(
+    String token,
+  ) async {
+    final responseData = await getUserAttendanceContext(token);
 
     final dynamic rawZones = responseData['zones'];
 
@@ -26,7 +45,8 @@ class AttendanceService extends BaseApiService {
       }).toList();
     }
 
-    // Kompatibilitas sementara jika backend lama masih mengirim satu zona.
+    // Kompatibilitas sementara jika backend lama
+    // masih mengirim satu zona.
     if (responseData['area'] != null) {
       return <Map<String, dynamic>>[
         <String, dynamic>{
@@ -84,6 +104,21 @@ class AttendanceService extends BaseApiService {
       'message': responseData['message']?.toString() ?? 'Presensi berhasil.',
       'data': responseData,
     };
+  }
+
+  /// Endpoint sementara untuk mengambil data pengujian geofencing.
+  Future<Map<String, dynamic>> getGeofenceTestData({
+    required String token,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final data = await postJson(
+      '/attendance/geofence-test',
+      token: token,
+      body: {'latitude': latitude, 'longitude': longitude},
+    );
+
+    return _asMap(data);
   }
 
   /// Mengambil status presensi user pada hari berjalan.

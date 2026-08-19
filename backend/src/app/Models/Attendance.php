@@ -12,6 +12,7 @@ class Attendance extends Model
     protected $fillable = [
         'employee_id',
         'attendance_zone_id',
+        'work_assignment_id',
         'leave_id',
         'date',
         'check_in',
@@ -51,5 +52,10 @@ class Attendance extends Model
     public function leave()
     {
         return $this->belongsTo(Leave::class);
+    }
+
+    public function workAssignment()
+    {
+        return $this->belongsTo(WorkAssignment::class);
     }
 }
