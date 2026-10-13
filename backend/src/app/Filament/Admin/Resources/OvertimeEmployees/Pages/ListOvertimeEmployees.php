@@ -3,7 +3,7 @@
 namespace App\Filament\Admin\Resources\OvertimeEmployees\Pages;
 
 use App\Filament\Admin\Resources\OvertimeEmployees\OvertimeEmployeeResource;
-use App\Filament\Resources\OvertimeEmployeeResource\Widgets\TopOvertimeEmployeesChart;
+use App\Filament\Admin\Resources\OvertimeEmployees\Widgets\TopOvertimeEmployeesChart;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 

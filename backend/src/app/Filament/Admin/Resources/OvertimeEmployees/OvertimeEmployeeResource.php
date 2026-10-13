@@ -7,7 +7,7 @@ use App\Filament\Admin\Resources\OvertimeEmployees\Pages\EditOvertimeEmployee;
 use App\Filament\Admin\Resources\OvertimeEmployees\Pages\ListOvertimeEmployees;
 use App\Filament\Admin\Resources\OvertimeEmployees\Schemas\OvertimeEmployeeForm;
 use App\Filament\Admin\Resources\OvertimeEmployees\Tables\OvertimeEmployeesTable;
-use App\Filament\Resources\OvertimeEmployeeResource\Widgets\TopOvertimeEmployeesChart;
+use App\Filament\Admin\Resources\OvertimeEmployees\Widgets\TopOvertimeEmployeesChart;
 use App\Models\OvertimeEmployee;
 use BackedEnum;
 use Filament\Resources\Resource;
