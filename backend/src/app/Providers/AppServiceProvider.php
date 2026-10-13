@@ -7,6 +7,10 @@ namespace App\Providers;
 use App\Models\Employee;
 use App\Policies\ActivityPolicy;
 use App\Policies\EmployeeAttendancePolicy;
+use App\Repositories\Contracts\AttendanceRepositoryInterface;
+use App\Repositories\Contracts\LeaveRepositoryInterface;
+use App\Repositories\Eloquent\AttendanceRepository;
+use App\Repositories\Eloquent\LeaveRepository;
 use Filament\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -24,7 +28,15 @@ final class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            LeaveRepositoryInterface::class,
+            LeaveRepository::class
+        );
+
+        $this->app->bind(
+            AttendanceRepositoryInterface::class,
+            AttendanceRepository::class
+        );
     }
 
     /**

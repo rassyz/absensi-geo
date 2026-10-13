@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Resources\OvertimeEmployeeResource\Widgets;
+namespace App\Filament\Admin\Resources\OvertimeEmployees\Widgets;
 
 use Filament\Widgets\ChartWidget;
 use App\Models\OvertimeEmployee;
