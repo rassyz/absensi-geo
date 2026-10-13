@@ -9,8 +9,10 @@ use App\Policies\ActivityPolicy;
 use App\Policies\EmployeeAttendancePolicy;
 use App\Repositories\Contracts\AttendanceRepositoryInterface;
 use App\Repositories\Contracts\LeaveRepositoryInterface;
+use App\Repositories\Contracts\OvertimeRepositoryInterface;
 use App\Repositories\Eloquent\AttendanceRepository;
 use App\Repositories\Eloquent\LeaveRepository;
+use App\Repositories\Eloquent\OvertimeRepository;
 use Filament\Livewire\Notifications;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -36,6 +38,11 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             AttendanceRepositoryInterface::class,
             AttendanceRepository::class
+        );
+
+        $this->app->bind(
+            OvertimeRepositoryInterface::class,
+            OvertimeRepository::class
         );
     }
 
