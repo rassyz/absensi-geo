@@ -67,7 +67,7 @@ class LeaveController extends Controller
                 ->get()
                 ->pluck('total', 'status');
 
-            $balance = 20; // jatah cuti
+            $balance = 12; // jatah cuti
             $approved = $summary['Approved'] ?? 0;
             $pending = $summary['Pending'] ?? 0;
             $cancelled = $summary['Rejected'] ?? 0;
